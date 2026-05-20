@@ -48,18 +48,20 @@ class TileTemplateClassifier:
     wood pixels happen to be saturated enough to pass the gate.
     """
 
-    SAT_FLOOR = 100
-    VAL_FLOOR = 60
+    SAT_FLOOR = 80
+    VAL_FLOOR = 50
     HUE_BINS = 36           # 5-degree bins
-    HUE_PAD = 12            # +/- this many hue units around a template's hue
-    # The colored ring is on the OUTSIDE of each tile; the icon (which can
-    # have stray pixels of other colors -- e.g. a red-tipped crab claw on
-    # a blue tile) sits in the middle. Drop the inner disc when computing
-    # histograms so the icon can't pollute the vote.
-    INNER_MASK_FRAC = 0.55
+    HUE_PAD = 15            # +/- this many hue units around a template's hue
+    # Sample ONLY a thin annular band of the patch -- the colored hex
+    # border. Inside this band is the icon (different artwork per tile,
+    # different colors); outside is the wood background. Both confound
+    # color matching, so we drop them entirely.
+    RING_INNER = 0.65       # fraction of patch half-width; pixels closer
+    RING_OUTER = 0.98       # to centre than INNER or farther than OUTER
+                            # are dropped.
     # Require this many ring pixels matching a template's hue before
     # classifying a cell as that color.
-    MIN_MATCH_PIXELS = 20
+    MIN_MATCH_PIXELS = 15
     # Expected hue zones per color. A template's dominant hue is clamped
     # into its color's zone -- so a green template whose peak landed on a
     # yellow icon highlight (hue ~30) is still treated as green-at-50.
@@ -96,8 +98,11 @@ class TileTemplateClassifier:
         ys = np.arange(h).reshape(-1, 1)
         xs = np.arange(w).reshape(1, -1)
         d = np.sqrt((ys - cy) ** 2 + (xs - cx) ** 2)
-        outer = min(cy, cx)
-        return (d >= outer * self.INNER_MASK_FRAC).astype(np.uint8) * 255
+        outer_r = min(cy, cx)
+        # Thin annular band: pixels strictly between the inner and outer
+        # radii are the colored hex border.
+        ring = (d >= outer_r * self.RING_INNER) & (d <= outer_r * self.RING_OUTER)
+        return ring.astype(np.uint8) * 255
 
     def _saturated_hues(self, bgr: np.ndarray) -> np.ndarray:
         """Return the array of hues from saturated ring pixels."""
