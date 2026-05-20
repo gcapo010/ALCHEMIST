@@ -48,8 +48,8 @@ class TileTemplateClassifier:
     wood pixels happen to be saturated enough to pass the gate.
     """
 
-    SAT_FLOOR = 80
-    VAL_FLOOR = 60
+    SAT_FLOOR = 140
+    VAL_FLOOR = 70
     HUE_BINS = 36           # 5-degree bins
     HUE_PAD = 12            # +/- this many hue units around a template's hue
     # The colored ring is on the OUTSIDE of each tile; the icon (which can
@@ -59,7 +59,15 @@ class TileTemplateClassifier:
     INNER_MASK_FRAC = 0.55
     # Require this many ring pixels matching a template's hue before
     # classifying a cell as that color.
-    MIN_MATCH_PIXELS = 25
+    MIN_MATCH_PIXELS = 20
+    # Expected hue zones per color. A template's dominant hue is clamped
+    # into its color's zone -- so a green template whose peak landed on a
+    # yellow icon highlight (hue ~30) is still treated as green-at-50.
+    EXPECTED_HUE_ZONES: Dict[int, List[Tuple[int, int]]] = {
+        RED: [(160, 179)],
+        BLUE: [(85, 130)],
+        GREEN: [(40, 85)],
+    }
 
     def __init__(self, templates_dir: str = TEMPLATES_DIR) -> None:
         self.templates: Dict[int, List[np.ndarray]] = {RED: [], BLUE: [], GREEN: []}
@@ -73,7 +81,7 @@ class TileTemplateClassifier:
                 img = cv2.imread(path, cv2.IMREAD_COLOR)
                 if img is None:
                     continue
-                dom = self._dominant_hue(img)
+                dom = self._dominant_hue_in_zone(img, color_id)
                 if dom is None:
                     continue
                 self.templates[color_id].append(img)
@@ -99,19 +107,27 @@ class TileTemplateClassifier:
         keep = ring & sat_ok
         return hsv[keep][:, 0].astype(np.int32)
 
-    def _dominant_hue(self, bgr: np.ndarray) -> Optional[int]:
+    def _dominant_hue_in_zone(self, bgr: np.ndarray,
+                              color_id: int) -> Optional[int]:
+        """Dominant hue inside the expected zone for this color id, so the
+        peak can't land on an icon highlight outside the color's range."""
         hues = self._saturated_hues(bgr)
         if hues.size == 0:
             return None
-        # Histogram on the full 0..179 range; pick the peak bin's centre.
         hist = np.bincount(hues, minlength=180).astype(np.float32)
         kernel = np.ones(5) / 5.0
         smooth = np.convolve(hist, kernel, mode="same")
-        # Red wraps -- to find the peak correctly, double the array and
-        # search a 180-wide window across the wrap.
-        doubled = np.concatenate([smooth, smooth])
-        best_idx = int(np.argmax(doubled[:180 + 180]))
-        return best_idx % 180
+        best_h = None
+        best_count = -1.0
+        for lo_h, hi_h in self.EXPECTED_HUE_ZONES.get(color_id, [(0, 179)]):
+            sub = smooth[lo_h:hi_h + 1]
+            if sub.size == 0:
+                continue
+            local = int(np.argmax(sub)) + lo_h
+            if smooth[local] > best_count:
+                best_count = float(smooth[local])
+                best_h = local
+        return best_h
 
     def _count_in_band(self, hues: np.ndarray, centre: int) -> int:
         """Count how many hues fall within HUE_PAD of `centre` (wrap-aware)."""
