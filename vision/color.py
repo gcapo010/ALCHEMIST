@@ -124,14 +124,15 @@ class ColorClassifier:
         for lo_h, hi_h in expected_zones.get(color_id, [(0, 180)]):
             zone_mask |= (hue >= lo_h) & (hue <= hi_h)
 
-        keep = zone_mask & (sat >= 140) & (val >= 80)
+        keep = zone_mask & (sat >= 130) & (val >= 70)
         if not np.any(keep):
-            keep = zone_mask & (sat >= 100) & (val >= 60)
+            keep = zone_mask & (sat >= 90) & (val >= 50)
         if not np.any(keep):
-            # Fall back to any saturated pixel, ignoring the zone.
-            keep = (sat >= 100) & (val >= 60)
-        if not np.any(keep):
-            keep = np.ones(len(hsv), dtype=bool)
+            # No in-zone pixels at all -- the sample patch is on the wrong
+            # tile or the wrong spot. Bail out and keep the existing range
+            # (default or previously calibrated) so we don't poison it with
+            # pixels from a neighbouring tile.
+            return
 
         ring = hsv[keep]
         h = float(np.median(ring[:, 0]))

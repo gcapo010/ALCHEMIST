@@ -110,11 +110,18 @@ def run_calibration(cols: int = 8, rows: int = 10,
         for color_id, name in [(RED, "RED"), (BLUE, "BLUE"), (GREEN, "GREEN")]:
             xy = _wait_for_key_and_grab_mouse(
                 f"  hover the CENTER of a {name} tile.")
-            r = 24
+            r = 14
             region = Region(xy[0] - r, xy[1] - r, 2 * r + 1, 2 * r + 1)
             patch = sc.grab(region)
+            before = classifier.ranges.get(color_id)
             classifier.tune_from_sample(color_id, patch)
-            print(f"  {name} tuned -> {classifier.ranges[color_id]}")
+            after = classifier.ranges.get(color_id)
+            if after is before:
+                print(f"  {name}: no in-zone pixels found at click -- "
+                      f"keeping defaults. Try clicking on the colored "
+                      f"RING of the tile, not the center icon.")
+            else:
+                print(f"  {name} tuned -> {classifier.ranges[color_id]}")
     except Exception as e:
         print(f"  (color tuning skipped: {e}; using defaults)")
     cal.color_ranges = classifier.to_dict()
