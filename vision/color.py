@@ -46,7 +46,7 @@ class ColorClassifier:
     """Classifies a small image patch as RED / BLUE / GREEN / EMPTY."""
 
     def __init__(self, ranges: Optional[Dict[int, List[HSVRange]]] = None,
-                 min_fill: float = 0.10) -> None:
+                 min_fill: float = 0.15) -> None:
         self.ranges: Dict[int, List[HSVRange]] = ranges or {
             k: [HSVRange(r.lo, r.hi) for r in v]
             for k, v in DEFAULT_COLOR_RANGES.items()
@@ -62,7 +62,7 @@ class ColorClassifier:
         total = hsv.shape[0] * hsv.shape[1]
         # Drop muddy / dark background pixels from the vote entirely so the
         # brown wood never accumulates "almost matches red" pixels.
-        sat_gate = cv2.inRange(hsv, np.array((0, 90, 70), dtype=np.uint8),
+        sat_gate = cv2.inRange(hsv, np.array((0, 130, 80), dtype=np.uint8),
                                np.array((180, 255, 255), dtype=np.uint8))
         best_color = EMPTY
         best_score = self.min_fill * total

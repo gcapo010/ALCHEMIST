@@ -65,6 +65,12 @@ class BotRunner(threading.Thread):
                                   region_origin=(self.region.left, self.region.top))
         self.tm = TemplateMatcher()
         self.mouse = MouseController()
+        # Log loaded HSV ranges so we can see what calibration produced.
+        from vision.color import COLOR_NAMES
+        for cid, rngs in sorted(self.classifier.ranges.items()):
+            name = COLOR_NAMES.get(cid, str(cid))
+            for r in rngs:
+                self._log(f"hsv {name}: lo={tuple(r.lo)} hi={tuple(r.hi)}")
 
     # --- control api (called from GUI thread) ---
 
