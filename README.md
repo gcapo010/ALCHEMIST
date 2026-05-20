@@ -63,6 +63,19 @@ in the overlay, tune those two numbers in `calibration.json`.
 
 ## Run
 
+GUI control panel (recommended — no CLI needed):
+
+```bash
+python main.py --gui
+```
+
+or just double-click **`gui.bat`** (as administrator). The panel has Start,
+Pause/Resume, Probe (no-click), Recalibrate, and Quit buttons, plus a live
+view of the detected board, current/preview pair, FPS, chosen move, and a
+log pane.
+
+Headless CLI mode:
+
 ```bash
 python main.py
 ```

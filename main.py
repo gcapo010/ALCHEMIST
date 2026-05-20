@@ -220,6 +220,8 @@ def main(argv=None) -> int:
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--probe", action="store_true",
                         help="diagnostics only -- never click")
+    parser.add_argument("--gui", action="store_true",
+                        help="launch the Tkinter control panel")
     parser.add_argument("--cols", type=int, default=7)
     parser.add_argument("--rows", type=int, default=8)
     args = parser.parse_args(argv)
@@ -227,6 +229,9 @@ def main(argv=None) -> int:
     if args.calibrate:
         run_calibration(cols=args.cols, rows=args.rows)
         return 0
+    if args.gui:
+        from ui.gui import main as gui_main
+        return gui_main()
     return run(debug=args.debug, probe=args.probe)
 
 
