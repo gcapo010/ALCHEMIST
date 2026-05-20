@@ -48,8 +48,8 @@ class TileTemplateClassifier:
     wood pixels happen to be saturated enough to pass the gate.
     """
 
-    SAT_FLOOR = 140
-    VAL_FLOOR = 70
+    SAT_FLOOR = 100
+    VAL_FLOOR = 60
     HUE_BINS = 36           # 5-degree bins
     HUE_PAD = 12            # +/- this many hue units around a template's hue
     # The colored ring is on the OUTSIDE of each tile; the icon (which can
