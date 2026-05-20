@@ -55,6 +55,10 @@ class TileTemplateClassifier:
     # a blue tile) sits in the middle. Drop the inner disc when computing
     # histograms so the icon can't pollute the vote.
     INNER_MASK_FRAC = 0.55   # mask radius as fraction of patch half-size
+    # An empty cell, when sampled, may still pick up bleed-over pixels
+    # from a neighbouring tile. Require this many saturated ring pixels
+    # before we'll consider the cell non-empty.
+    MIN_RING_PIXELS = 80
 
     def __init__(self, templates_dir: str = TEMPLATES_DIR,
                  threshold: float = 0.35) -> None:
@@ -70,7 +74,8 @@ class TileTemplateClassifier:
                 if img is None:
                     continue
                 self.templates[color_id].append(img)
-                self.template_hists[color_id].append(self._hue_hist(img))
+                th, _ = self._hue_hist(img)
+                self.template_hists[color_id].append(th)
 
     def has_templates(self) -> bool:
         return any(len(v) for v in self.templates.values())
@@ -86,8 +91,14 @@ class TileTemplateClassifier:
         outer = min(cy, cx)
         return (d >= outer * self.INNER_MASK_FRAC).astype(np.uint8) * 255
 
-    def _hue_hist(self, bgr: np.ndarray) -> np.ndarray:
-        """Hue histogram of saturated ring pixels only (icon masked out)."""
+    def _hue_hist(self, bgr: np.ndarray) -> Tuple[np.ndarray, float]:
+        """Hue histogram of saturated ring pixels and the raw pixel count.
+
+        The histogram is L1-normalised so a faint ring and a bright ring
+        compare on the same axis. The count is returned separately so the
+        caller can tell "almost no saturated pixels" (empty cell) apart
+        from "a strong ring".
+        """
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
         ring = self._ring_mask(bgr.shape[:2])
         sat_mask = cv2.inRange(
@@ -98,15 +109,15 @@ class TileTemplateClassifier:
         hist = cv2.calcHist([hsv], [0], mask, [self.HUE_BINS], [0, 180])
         s = float(hist.sum())
         if s <= 0:
-            return hist.flatten()
-        return (hist / s).flatten()
+            return hist.flatten(), 0.0
+        return (hist / s).flatten(), s
 
     def classify_patch(self, bgr_patch: np.ndarray) -> int:
         if bgr_patch.size == 0 or not self.has_templates():
             return EMPTY
-        hist = self._hue_hist(bgr_patch)
-        if hist.sum() <= 0:
-            return EMPTY     # no saturated pixels at all -- empty cell
+        hist, count = self._hue_hist(bgr_patch)
+        if count < self.MIN_RING_PIXELS:
+            return EMPTY     # too few ring pixels to be a real tile
         best_color = EMPTY
         best_score = self.threshold
         for color_id, hists in self.template_hists.items():
