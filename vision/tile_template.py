@@ -48,25 +48,24 @@ class TileTemplateClassifier:
     wood pixels happen to be saturated enough to pass the gate.
     """
 
-    SAT_FLOOR = 80
+    SAT_FLOOR = 70
     VAL_FLOOR = 50
-    HUE_BINS = 36           # 5-degree bins
-    HUE_PAD = 15            # +/- this many hue units around a template's hue
-    # Sample ONLY a thin annular band of the patch -- the colored hex
-    # border. Inside this band is the icon (different artwork per tile,
-    # different colors); outside is the wood background. Both confound
-    # color matching, so we drop them entirely.
-    RING_INNER = 0.65       # fraction of patch half-width; pixels closer
-    RING_OUTER = 0.98       # to centre than INNER or farther than OUTER
-                            # are dropped.
-    # Require this many ring pixels matching a template's hue before
-    # classifying a cell as that color.
-    MIN_MATCH_PIXELS = 15
+    HUE_PAD = 18            # +/- this many hue units around a template's hue
+    # Sample 6 small probes inside the tile, one at each hex-edge midpoint,
+    # placed just INSIDE the colored border so we never bleed into a
+    # neighbouring tile's ring. PROBE_FRAC is the fraction of the patch
+    # half-width at which the probes sit; PROBE_PATCH is the half-size of
+    # each small probe (so the probe is (2*PROBE_PATCH+1)^2 pixels).
+    PROBE_FRAC = 0.75
+    PROBE_PATCH = 3
+    # Require at least this fraction of probes to vote the same color
+    # before classifying a cell as that color.
+    MIN_VOTES = 3
     # Expected hue zones per color. A template's dominant hue is clamped
     # into its color's zone -- so a green template whose peak landed on a
     # yellow icon highlight (hue ~30) is still treated as green-at-50.
     EXPECTED_HUE_ZONES: Dict[int, List[Tuple[int, int]]] = {
-        RED: [(160, 179)],
+        RED: [(160, 179), (0, 12)],
         BLUE: [(85, 130)],
         GREEN: [(40, 85)],
     }
@@ -92,89 +91,127 @@ class TileTemplateClassifier:
     def has_templates(self) -> bool:
         return any(len(v) for v in self.templates.values())
 
-    def _ring_mask(self, shape: Tuple[int, int]) -> np.ndarray:
-        h, w = shape
-        cy, cx = h / 2.0, w / 2.0
-        ys = np.arange(h).reshape(-1, 1)
-        xs = np.arange(w).reshape(1, -1)
-        d = np.sqrt((ys - cy) ** 2 + (xs - cx) ** 2)
-        outer_r = min(cy, cx)
-        # Thin annular band: pixels strictly between the inner and outer
-        # radii are the colored hex border.
-        ring = (d >= outer_r * self.RING_INNER) & (d <= outer_r * self.RING_OUTER)
-        return ring.astype(np.uint8) * 255
+    @staticmethod
+    def _probe_offsets(patch_half: float, frac: float) -> List[Tuple[int, int]]:
+        """6 (dy, dx) offsets at hex edge-midpoint directions, scaled to
+        sit at `frac` of the patch half-width."""
+        import math
+        r = patch_half * frac
+        # Flat-top hexes: edges' perpendicular directions are at
+        # 30, 90, 150, 210, 270, 330 degrees from +x.
+        offsets = []
+        for deg in (30, 90, 150, 210, 270, 330):
+            rad = math.radians(deg)
+            dx = int(round(r * math.cos(rad)))
+            dy = int(round(r * math.sin(rad)))
+            offsets.append((dy, dx))
+        return offsets
 
-    def _saturated_hues(self, bgr: np.ndarray) -> np.ndarray:
-        """Return the array of hues from saturated ring pixels."""
+    def _probe_hues(self, bgr: np.ndarray) -> List[Optional[int]]:
+        """Median hue at each of the 6 probe positions (None if probe
+        pixels are too desaturated to be a tile)."""
+        h, w = bgr.shape[:2]
+        cy, cx = h / 2.0, w / 2.0
+        patch_half = min(cy, cx)
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-        ring = self._ring_mask(bgr.shape[:2]) > 0
-        sat_ok = (hsv[:, :, 1] >= self.SAT_FLOOR) & (hsv[:, :, 2] >= self.VAL_FLOOR)
-        keep = ring & sat_ok
-        return hsv[keep][:, 0].astype(np.int32)
+        results: List[Optional[int]] = []
+        p = self.PROBE_PATCH
+        for dy, dx in self._probe_offsets(patch_half, self.PROBE_FRAC):
+            py = int(round(cy + dy))
+            px = int(round(cx + dx))
+            y0, y1 = max(0, py - p), min(h, py + p + 1)
+            x0, x1 = max(0, px - p), min(w, px + p + 1)
+            probe = hsv[y0:y1, x0:x1].reshape(-1, 3)
+            if probe.size == 0:
+                results.append(None)
+                continue
+            sat_ok = (probe[:, 1] >= self.SAT_FLOOR) & (probe[:, 2] >= self.VAL_FLOOR)
+            kept = probe[sat_ok]
+            if kept.shape[0] < max(1, probe.shape[0] // 3):
+                # Most probe pixels failed the saturation gate -- this
+                # probe is on icon or wood, not on the ring.
+                results.append(None)
+                continue
+            results.append(int(np.median(kept[:, 0])))
+        return results
+
+    @staticmethod
+    def _hue_distance(a: int, b: int) -> int:
+        d = abs(a - b)
+        return min(d, 180 - d)
 
     def _dominant_hue_in_zone(self, bgr: np.ndarray,
                               color_id: int) -> Optional[int]:
-        """Dominant hue inside the expected zone for this color id, so the
-        peak can't land on an icon highlight outside the color's range."""
-        hues = self._saturated_hues(bgr)
-        if hues.size == 0:
+        """Pick the template's representative hue from its 6 probes,
+        constrained to the color's expected zone so an icon highlight
+        outside the zone can't be picked as the centre."""
+        probes = [h for h in self._probe_hues(bgr) if h is not None]
+        if not probes:
             return None
-        hist = np.bincount(hues, minlength=180).astype(np.float32)
-        kernel = np.ones(5) / 5.0
-        smooth = np.convolve(hist, kernel, mode="same")
-        best_h = None
-        best_count = -1.0
-        for lo_h, hi_h in self.EXPECTED_HUE_ZONES.get(color_id, [(0, 179)]):
-            sub = smooth[lo_h:hi_h + 1]
-            if sub.size == 0:
-                continue
-            local = int(np.argmax(sub)) + lo_h
-            if smooth[local] > best_count:
-                best_count = float(smooth[local])
-                best_h = local
-        return best_h
+        zones = self.EXPECTED_HUE_ZONES.get(color_id, [(0, 179)])
 
-    def _count_in_band(self, hues: np.ndarray, centre: int) -> int:
-        """Count how many hues fall within HUE_PAD of `centre` (wrap-aware)."""
-        if hues.size == 0:
-            return 0
-        diff = np.abs(hues - centre)
-        wrap_diff = np.minimum(diff, 180 - diff)
-        return int(np.count_nonzero(wrap_diff <= self.HUE_PAD))
+        def in_zone(h: int) -> bool:
+            return any(lo <= h <= hi for lo, hi in zones)
+
+        in_zone_probes = [h for h in probes if in_zone(h)]
+        if in_zone_probes:
+            return int(np.median(in_zone_probes))
+        # Fall back to median of all probes if none are in zone (shouldn't
+        # happen for a well-captured template, but be defensive).
+        return int(np.median(probes))
 
     def classify_patch(self, bgr_patch: np.ndarray) -> int:
         if bgr_patch.size == 0 or not self.has_templates():
             return EMPTY
-        hues = self._saturated_hues(bgr_patch)
-        if hues.size < self.MIN_MATCH_PIXELS:
+        probes = self._probe_hues(bgr_patch)
+        valid = [h for h in probes if h is not None]
+        if len(valid) < self.MIN_VOTES:
             return EMPTY
-        best_color = EMPTY
-        best_count = self.MIN_MATCH_PIXELS - 1
-        for color_id, dom_list in self.template_hues.items():
-            for dom in dom_list:
-                cnt = self._count_in_band(hues, dom)
-                if cnt > best_count:
-                    best_count = cnt
-                    best_color = color_id
-        return best_color
+        # For each probe, find the template whose hue is closest (within
+        # HUE_PAD). Vote for that color.
+        votes: Dict[int, int] = {RED: 0, BLUE: 0, GREEN: 0}
+        for h in valid:
+            best_color = EMPTY
+            best_dist = self.HUE_PAD + 1
+            for color_id, dom_list in self.template_hues.items():
+                for dom in dom_list:
+                    d = self._hue_distance(h, dom)
+                    if d < best_dist:
+                        best_dist = d
+                        best_color = color_id
+            if best_color != EMPTY:
+                votes[best_color] += 1
+        winner = max(votes, key=lambda k: votes[k])
+        if votes[winner] < self.MIN_VOTES:
+            return EMPTY
+        return winner
 
     def classify_patch_verbose(self, bgr_patch: np.ndarray
-                               ) -> Tuple[int, int, int]:
-        """Like classify_patch but returns (color_id, matching_pixels, total_ring_pixels)."""
+                               ) -> Tuple[int, Dict[int, int], List[Optional[int]]]:
+        """Like classify_patch but also returns the vote tally and the raw
+        probe hues, for diagnostics."""
+        votes: Dict[int, int] = {RED: 0, BLUE: 0, GREEN: 0}
         if bgr_patch.size == 0 or not self.has_templates():
-            return (EMPTY, 0, 0)
-        hues = self._saturated_hues(bgr_patch)
-        if hues.size < self.MIN_MATCH_PIXELS:
-            return (EMPTY, 0, int(hues.size))
-        best_color = EMPTY
-        best_count = self.MIN_MATCH_PIXELS - 1
-        for color_id, dom_list in self.template_hues.items():
-            for dom in dom_list:
-                cnt = self._count_in_band(hues, dom)
-                if cnt > best_count:
-                    best_count = cnt
-                    best_color = color_id
-        return (best_color, best_count, int(hues.size))
+            return (EMPTY, votes, [])
+        probes = self._probe_hues(bgr_patch)
+        valid = [h for h in probes if h is not None]
+        if len(valid) < self.MIN_VOTES:
+            return (EMPTY, votes, probes)
+        for h in valid:
+            best_color = EMPTY
+            best_dist = self.HUE_PAD + 1
+            for color_id, dom_list in self.template_hues.items():
+                for dom in dom_list:
+                    d = self._hue_distance(h, dom)
+                    if d < best_dist:
+                        best_dist = d
+                        best_color = color_id
+            if best_color != EMPTY:
+                votes[best_color] += 1
+        winner = max(votes, key=lambda k: votes[k])
+        if votes[winner] < self.MIN_VOTES:
+            return (EMPTY, votes, probes)
+        return (winner, votes, probes)
 
 
 def save_template(color_name: str, bgr_patch: np.ndarray,
