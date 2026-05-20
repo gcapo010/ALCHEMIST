@@ -52,8 +52,9 @@ def _setup(cal: Calibration):
     tile_classifier = TileTemplateClassifier()
 
     region = Region.from_corners(cal.board_tl, cal.board_br)
-    grid = HexGrid.from_rect(cal.board_tl, cal.board_br,
-                             cal.cols, cal.rows, sample_radius=cal.sample_radius)
+    # Let HexGrid auto-size the sample radius from the actual board geometry.
+    grid = HexGrid.from_rect(cal.board_tl, cal.board_br, cal.cols, cal.rows)
+    print(f"auto-sized sample_radius = {grid.sample_radius}")
     reader = BoardReader(grid, classifier,
                          region_origin=(region.left, region.top),
                          tile_classifier=tile_classifier)

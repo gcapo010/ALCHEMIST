@@ -60,9 +60,12 @@ class BotRunner(threading.Thread):
         from vision.tile_template import TileTemplateClassifier
         self.tile_classifier = TileTemplateClassifier()
         self.region = Region.from_corners(cal.board_tl, cal.board_br)
+        # sample_radius is derived from board geometry (auto-sizes to tile
+        # diameter). The value stored in calibration.json is a stale legacy
+        # hint and is intentionally ignored here.
         self.grid = HexGrid.from_rect(cal.board_tl, cal.board_br,
-                                      cal.cols, cal.rows,
-                                      sample_radius=cal.sample_radius)
+                                      cal.cols, cal.rows)
+        self._log(f"auto-sized sample_radius = {self.grid.sample_radius}")
         self.reader = BoardReader(self.grid, self.classifier,
                                   region_origin=(self.region.left, self.region.top),
                                   tile_classifier=self.tile_classifier)
@@ -115,7 +118,7 @@ class BotRunner(threading.Thread):
     def _sample_pair(self, center_xy: Tuple[int, int]) -> Tuple[int, int]:
         dx, dy = self.cal.pair_dx, self.cal.pair_dy
         cx, cy = center_xy
-        r = max(self.cal.sample_radius, 14)
+        r = max(self.grid.sample_radius, 14)
         l = self.sc.grab(Region(cx - dx - r, cy - dy - r, 2 * r + 1, 2 * r + 1))
         rr = self.sc.grab(Region(cx + dx - r, cy + dy - r, 2 * r + 1, 2 * r + 1))
         if self.tile_classifier.has_templates():

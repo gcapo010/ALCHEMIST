@@ -129,10 +129,12 @@ def run_calibration(cols: int = 8, rows: int = 10,
     try:
         from .capture import ScreenCapture, Region
         from .tile_template import save_template
+        from .board import HexGrid
         sc = ScreenCapture()
-        # Template size: match the runtime sample radius so the captured
-        # image is the same scale as the cell patches the bot extracts.
-        r = max(cal.sample_radius, 14)
+        # Template size: derive from the board geometry so it matches the
+        # runtime cell patch (which itself is auto-sized to the tile).
+        _g = HexGrid.from_rect(cal.board_tl, cal.board_br, cal.cols, cal.rows)
+        r = _g.sample_radius
         for name in ("red", "blue", "green"):
             xy = _wait_for_key_and_grab_mouse(
                 f"  hover the CENTER of a {name.upper()} tile.")

@@ -10,7 +10,7 @@ and robust against the icon artwork inside each hex.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 
@@ -31,7 +31,8 @@ class HexGrid:
 
     @classmethod
     def from_rect(cls, top_left: Tuple[int, int], bottom_right: Tuple[int, int],
-                  cols: int, rows: int, sample_radius: int = 14) -> "HexGrid":
+                  cols: int, rows: int,
+                  sample_radius: Optional[int] = None) -> "HexGrid":
         x1, y1 = top_left
         x2, y2 = bottom_right
         width = x2 - x1
@@ -44,6 +45,12 @@ class HexGrid:
         row_spacing = height / (rows + 0.5) if rows > 0 else 0.0
         origin_x = x1 + col_spacing * (2.0 / 3.0)
         origin_y = y1 + row_spacing * 0.5
+        # Auto-size the sample patch to the actual tile geometry. A hex
+        # tile's half-width (flat-top, centre to edge) is col_spacing * 2/3;
+        # we sample a square patch around the centre that just covers that
+        # diameter so the colored ring at the tile's border is included.
+        if sample_radius is None:
+            sample_radius = max(8, int(round(col_spacing * 0.55)))
         return cls(origin_x=origin_x, origin_y=origin_y,
                    col_spacing=col_spacing, row_spacing=row_spacing,
                    cols=cols, rows=rows, sample_radius=sample_radius)
