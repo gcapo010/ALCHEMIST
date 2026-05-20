@@ -80,10 +80,14 @@ def run(debug: bool = False, probe: bool = False) -> int:
     prints what it detects so calibration can be verified."""
     cal = load_calibration()
     if cal is None:
+        import os
         print("=" * 60)
-        print(f"  No {DEFAULT_CALIBRATION_PATH} found.")
+        print("  No calibration.json found.")
+        print(f"  Looked at: {DEFAULT_CALIBRATION_PATH}")
+        print(f"  cwd:       {os.getcwd()}")
         print("  Run calibration first:")
         print("      python main.py --calibrate")
+        print("  (or double-click calibrate.bat as administrator)")
         print("=" * 60)
         return 2
 

@@ -19,7 +19,8 @@ from typing import Dict, List, Optional, Tuple
 
 from .color import ColorClassifier, RED, BLUE, GREEN
 
-DEFAULT_CALIBRATION_PATH = "calibration.json"
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_CALIBRATION_PATH = os.path.join(_PROJECT_ROOT, "calibration.json")
 
 
 @dataclass

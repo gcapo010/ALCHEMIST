@@ -7,10 +7,14 @@ from typing import Dict, Optional, Tuple
 import cv2
 import numpy as np
 
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 class TemplateMatcher:
-    def __init__(self, templates_dir: str = "templates",
+    def __init__(self, templates_dir: Optional[str] = None,
                  threshold: float = 0.85) -> None:
+        if templates_dir is None:
+            templates_dir = os.path.join(_PROJECT_ROOT, "templates")
         self.threshold = threshold
         self.templates: Dict[str, np.ndarray] = {}
         if os.path.isdir(templates_dir):
