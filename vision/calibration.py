@@ -1,11 +1,11 @@
 """Mouse-click calibration workflow.
 
 Run with `python main.py --calibrate`. The user is prompted to:
-  1. F8 over top-left of board
-  2. F8 over bottom-right of board
-  3. F8 over center of current piece spawn area
-  4. F8 over center of preview piece area
-  5. Then auto-tune HSV ranges by clicking on a Red, Blue, then Green tile.
+  1. Ctrl+Alt+Space over top-left of board
+  2. Ctrl+Alt+Space over bottom-right of board
+  3. Ctrl+Alt+Space over center of current piece spawn area
+  4. Ctrl+Alt+Space over center of preview piece area
+  5. Then auto-tune HSV ranges by hovering a Red, Blue, then Green tile.
 
 Result is written to calibration.json.
 """
@@ -60,11 +60,13 @@ def load_calibration(path: str = DEFAULT_CALIBRATION_PATH) -> Optional[Calibrati
         return None
 
 
-def _wait_for_key_and_grab_mouse(prompt: str, hotkey: str = "f8") -> Tuple[int, int]:
+def _wait_for_key_and_grab_mouse(prompt: str,
+                                 hotkey: str = "ctrl+alt+space"
+                                 ) -> Tuple[int, int]:
     import keyboard
     import pyautogui
     print(prompt)
-    print(f"  -> Hover the target, then press [{hotkey.upper()}]")
+    print(f"  -> Hover the target, then press [{hotkey}]")
     keyboard.wait(hotkey)
     pos = pyautogui.position()
     print(f"  captured: {pos}")
@@ -90,7 +92,8 @@ def run_calibration(cols: int = 8, rows: int = 12,
     cal.drop_y = min(cal.board_tl[1], cal.board_br[1]) - 10
 
     # Color tuning: click on a known-color tile to sample.
-    print("\nColor tuning: hover a RED tile and press F8. Then BLUE, then GREEN.")
+    print("\nColor tuning: hover a RED tile and press Ctrl+Alt+Space."
+          " Then BLUE, then GREEN.")
     classifier = ColorClassifier()
     try:
         from .capture import ScreenCapture, Region

@@ -31,7 +31,7 @@ Run once before first play:
 python main.py --calibrate
 ```
 
-You will be prompted (each press of `F8` confirms the next click):
+You will be prompted (each press of `Ctrl+Alt+Space` confirms the next click):
 
 1. Top-left of the playable board
 2. Bottom-right of the playable board
@@ -58,16 +58,17 @@ python main.py
 
 Hotkeys (global):
 
-| Key  | Action |
-|------|--------|
-| F7   | Pause / resume |
-| F8   | Toggle debug overlay |
-| F9   | Recalibrate (mouse points) |
-| F12  | Quit |
+| Key            | Action |
+|----------------|--------|
+| Ctrl+Alt+P     | Pause / resume |
+| Ctrl+Alt+D     | Toggle debug overlay |
+| Ctrl+Alt+R     | Recalibrate (mouse points) |
+| Ctrl+Alt+Q     | Quit |
+| Ctrl+Alt+Space | (during `--calibrate`) capture the current mouse position / color sample |
 
 ## Debug overlay
 
-`--debug` (or F8 at runtime) opens an OpenCV window showing:
+`--debug` (or Ctrl+Alt+D at runtime) opens an OpenCV window showing:
 
 - detected per-cell colors
 - chosen drop column + swap state
@@ -102,4 +103,4 @@ If templates are missing the bot will skip restart handling and just log.
 ## Safety
 
 Slam the mouse into the screen corner to trigger PyAutoGUI's failsafe abort,
-or press F12.
+or press Ctrl+Alt+Q.

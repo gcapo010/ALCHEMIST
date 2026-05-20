@@ -103,12 +103,13 @@ def run(debug: bool = False) -> int:
     def _request_recal():
         state["recalibrate"] = True
 
-    keyboard.add_hotkey("f7", _toggle_pause)
-    keyboard.add_hotkey("f8", _toggle_debug)
-    keyboard.add_hotkey("f9", _request_recal)
-    keyboard.add_hotkey("f12", _quit)
+    keyboard.add_hotkey("ctrl+alt+p", _toggle_pause)
+    keyboard.add_hotkey("ctrl+alt+d", _toggle_debug)
+    keyboard.add_hotkey("ctrl+alt+r", _request_recal)
+    keyboard.add_hotkey("ctrl+alt+q", _quit)
 
-    print("Bot running. F7 pause, F8 debug, F9 recalibrate, F12 quit.")
+    print("Bot running. Ctrl+Alt+P pause, Ctrl+Alt+D debug, "
+          "Ctrl+Alt+R recalibrate, Ctrl+Alt+Q quit.")
     last_board: Optional[np.ndarray] = None
     empty_frames = 0
 
