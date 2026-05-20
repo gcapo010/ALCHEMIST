@@ -13,14 +13,15 @@ import numpy as np
 
 from vision.color import EMPTY, RED, BLUE, GREEN
 
-# 6 hex neighbor offsets for odd-r offset coordinates.
-# Different parity rows have different column offsets.
-_NEIGHBORS_EVEN = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, -1), (1, 0)]
-_NEIGHBORS_ODD  = [(-1, 0),  (-1, 1), (0, -1), (0, 1), (1, 0),  (1, 1)]
+# 6 hex neighbor offsets for FLAT-TOP, odd-q offset coordinates.
+# Different parity COLUMNS have different row offsets.
+# (dr, dc) pairs covering N, S, NE, SE, NW, SW.
+_NEIGHBORS_EVEN_Q = [(-1, 0), (1, 0), (-1, 1), (0, 1), (-1, -1), (0, -1)]
+_NEIGHBORS_ODD_Q  = [(-1, 0), (1, 0), (0, 1),  (1, 1), (0, -1),  (1, -1)]
 
 
 def hex_neighbors(row: int, col: int) -> List[Tuple[int, int]]:
-    table = _NEIGHBORS_ODD if (row % 2) else _NEIGHBORS_EVEN
+    table = _NEIGHBORS_ODD_Q if (col % 2) else _NEIGHBORS_EVEN_Q
     return [(row + dr, col + dc) for dr, dc in table]
 
 

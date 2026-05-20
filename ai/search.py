@@ -1,9 +1,13 @@
 """Shallow placement search.
 
-For each (column, swap) placement of the CURRENT pair we simulate the drop,
-resolve chains, score, then optionally 1-ply lookahead by simulating the best
-placement of the PREVIEW pair on the resulting board. The total search space
-is at most 2 * cols * (2 * cols) -- tiny, so it's well under 50 ms.
+The pair is diagonal across two adjacent columns. For each (left_column, swap)
+placement of the CURRENT pair we simulate the drop, resolve chains, score,
+then optionally 1-ply lookahead by simulating the best placement of the
+PREVIEW pair on the resulting board. The total search space is at most
+2 * (cols-1) * (2 * (cols-1)) -- tiny, so it's well under 50 ms.
+
+Convention: `current_pair = (left_color, right_color)`. `swap=True` flips
+left/right.
 """
 from __future__ import annotations
 
@@ -18,17 +22,17 @@ from .heuristic import evaluate
 
 @dataclass
 class Move:
-    column: int
-    swap: bool          # True => swap pair before drop (right-click first)
+    column: int        # LEFT column of the diagonal pair
+    swap: bool         # True => swap pair before drop (right-click first)
     score: float
 
 
-def _simulate(board: Board, col: int, bottom: int, top: int
+def _simulate(board: Board, left_col: int, left_color: int, right_color: int
               ) -> Optional[Tuple[Board, int, int, int]]:
     """Return (new_board, cleared_tiles, chain_depth, dominant_cleared_color)
     or None if placement is illegal."""
     nb = board.clone()
-    if not drop_pair(nb, col, bottom, top):
+    if not drop_pair(nb, left_col, left_color, right_color):
         return None
     # Determine the dominant cleared color BEFORE resolution: easiest is to
     # snapshot what would clear on the first pass.
@@ -53,29 +57,28 @@ def choose_move(board: Board, current_pair: Tuple[int, int],
     `current_pair` is (bottom_color, top_color). `swap=True` flips it.
     """
     best: Optional[Move] = None
-    cols = board.cols
+    last_left = board.cols - 1   # left column can be 0..cols-2
 
     options = [(False, current_pair[0], current_pair[1])]
     if current_pair[0] != current_pair[1]:
         options.append((True, current_pair[1], current_pair[0]))
 
-    for swap, bot_col, top_col in options:
-        for c in range(cols):
-            sim = _simulate(board, c, bot_col, top_col)
+    for swap, l_color, r_color in options:
+        for c in range(last_left):
+            sim = _simulate(board, c, l_color, r_color)
             if sim is None:
                 continue
             nb, cleared, depth, dominant = sim
             score = evaluate(nb, cleared, depth, dominant)
 
             if lookahead and preview_pair is not None and not nb.is_top_overflow():
-                # 1-ply: best placement of preview pair on resulting board.
                 best_look = -1e18
                 pv_opts = [(preview_pair[0], preview_pair[1])]
                 if preview_pair[0] != preview_pair[1]:
                     pv_opts.append((preview_pair[1], preview_pair[0]))
-                for pb, pt in pv_opts:
-                    for pc in range(cols):
-                        sim2 = _simulate(nb, pc, pb, pt)
+                for pl, pr in pv_opts:
+                    for pc in range(last_left):
+                        sim2 = _simulate(nb, pc, pl, pr)
                         if sim2 is None:
                             continue
                         nb2, cl2, dp2, dom2 = sim2

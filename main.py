@@ -28,16 +28,18 @@ from ui.overlay import DebugOverlay
 
 
 def _sample_pair_at(sc: ScreenCapture, classifier: ColorClassifier,
-                    center_xy: Tuple[int, int], pitch: int
+                    center_xy: Tuple[int, int], dx: int, dy: int
                     ) -> Tuple[int, int]:
-    """Sample two stacked tiles at center +/- pitch/2. Returns (bottom, top)."""
+    """Sample the two diagonal tiles. Returns (left_color, right_color)
+    where 'left' is the upper-left tile and 'right' is the lower-right tile."""
     cx, cy = center_xy
     r = 6
-    top_region = Region(cx - r, cy - pitch // 2 - r, 2 * r + 1, 2 * r + 1)
-    bot_region = Region(cx - r, cy + pitch // 2 - r, 2 * r + 1, 2 * r + 1)
-    top_patch = sc.grab(top_region)
-    bot_patch = sc.grab(bot_region)
-    return classifier.classify_mean_hsv(bot_patch), classifier.classify_mean_hsv(top_patch)
+    left_region = Region(cx - dx - r, cy - dy - r, 2 * r + 1, 2 * r + 1)
+    right_region = Region(cx + dx - r, cy + dy - r, 2 * r + 1, 2 * r + 1)
+    left_patch = sc.grab(left_region)
+    right_patch = sc.grab(right_region)
+    return (classifier.classify_mean_hsv(left_patch),
+            classifier.classify_mean_hsv(right_patch))
 
 
 def _setup(cal: Calibration):
@@ -130,9 +132,9 @@ def run(debug: bool = False) -> int:
             board = Board(board_arr.copy())
 
             current_pair = _sample_pair_at(sc, classifier, cal.current_pair_xy,
-                                           cal.pair_tile_pitch)
+                                           cal.pair_dx, cal.pair_dy)
             preview_pair = _sample_pair_at(sc, classifier, cal.preview_pair_xy,
-                                           cal.pair_tile_pitch)
+                                           cal.pair_dx, cal.pair_dy)
 
             # If the current pair can't be read, assume end-of-game UI is up.
             if current_pair[0] == EMPTY or current_pair[1] == EMPTY:
@@ -155,7 +157,11 @@ def run(debug: bool = False) -> int:
                 time.sleep(0.05)
                 continue
 
-            col_x, _ = grid.cell_center(move.column, 0)
+            # Diagonal pair: cursor X is the midpoint between the two columns
+            # so the pair straddles columns (move.column, move.column + 1).
+            left_x, _ = grid.cell_center(move.column, 0)
+            right_x, _ = grid.cell_center(move.column + 1, 0)
+            col_x = (left_x + right_x) // 2
             drop_y = cal.drop_y if cal.drop_y else max(1, cal.board_tl[1] - 10)
             mouse.play(col_x, drop_y, move.swap, cal.current_pair_xy)
 

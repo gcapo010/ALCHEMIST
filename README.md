@@ -1,8 +1,15 @@
 # ALCHEMIST — Hex Match-3 Automation Bot
 
-A computer-vision-only Windows bot for a hex-based 3-color match-3 alchemy
-game. No memory reading, no OCR — just MSS screen capture, OpenCV HSV
-segmentation, a fast hex simulator, and PyAutoGUI mouse input.
+A computer-vision-only Windows bot for the **potion-brewing minigame in The
+Legend of Pirates Online** (TLOPO) — or any visually similar 3-color hex
+match-3 with a diagonal pair. No memory reading, no OCR — just MSS screen
+capture, OpenCV HSV segmentation, a fast hex simulator, and PyAutoGUI mouse
+input.
+
+Board layout: **flat-top hexes, odd-q offset, 7 columns × 8 rows**. The
+falling piece is **two adjacent hexes on the diagonal** (upper-left tile +
+lower-right tile), with split physics — each tile falls independently into
+its own column.
 
 ## Modules
 
@@ -47,8 +54,12 @@ needed.
 ### Board geometry
 
 The board geometry (columns, rows, hex pitch) is inferred from the rectangle
-plus the `--cols` and `--rows` flags (defaults 8 columns × 12 rows, pointy-top
-hexes in odd-r offset layout). Override in `calibration.json` as needed.
+plus the `--cols` and `--rows` flags (defaults 7 columns × 8 rows, flat-top
+hexes in odd-q offset layout). Override in `calibration.json` as needed.
+
+The diagonal-pair geometry uses `pair_dx` / `pair_dy` (pixel offsets from the
+pair's center to each of its two tiles). If pair color detection looks wrong
+in the overlay, tune those two numbers in `calibration.json`.
 
 ## Run
 

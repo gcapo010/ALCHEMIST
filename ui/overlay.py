@@ -41,24 +41,24 @@ class DebugOverlay:
         w = cols * cell + 2 * margin + sidebar
         img = np.full((h, w, 3), 24, dtype=np.uint8)
 
-        # Hex-ish layout (odd-r): offset odd rows half a cell.
+        # Hex-ish layout (flat-top odd-q): offset odd columns down half a cell.
         for r in range(rows):
             for c in range(cols):
                 color_id = int(board[r, c])
                 bgr = COLOR_BGR.get(color_id, (60, 60, 60))
-                x = margin + c * cell + (cell // 2 if r % 2 else 0)
-                y = margin + r * cell
+                x = margin + c * cell
+                y = margin + r * cell + (cell // 2 if c % 2 else 0)
                 cv2.rectangle(img, (x + 2, y + 2),
                               (x + cell - 2, y + cell - 2), bgr, -1)
                 cv2.rectangle(img, (x + 2, y + 2),
                               (x + cell - 2, y + cell - 2),
                               (90, 90, 90), 1)
 
-        # Chosen column highlight.
-        if chosen_col is not None and 0 <= chosen_col < cols:
+        # Chosen pair highlight (spans the chosen left column + the next one).
+        if chosen_col is not None and 0 <= chosen_col < cols - 1:
             x = margin + chosen_col * cell
             cv2.rectangle(img, (x, margin - 6),
-                          (x + cell, margin + rows * cell + 6),
+                          (x + 2 * cell, margin + rows * cell + cell // 2 + 6),
                           (0, 255, 255), 2)
 
         # Sidebar info.
@@ -68,9 +68,9 @@ class DebugOverlay:
         lines = [
             f"FPS: {fps:5.1f}",
             f"swap: {'YES' if swap else 'no'}",
-            f"col:  {chosen_col}",
-            f"cur:  {self._pair_str(current_pair)}",
-            f"prev: {self._pair_str(preview_pair)}",
+            f"L-col: {chosen_col}",
+            f"cur  L/R: {self._pair_str(current_pair)}",
+            f"prev L/R: {self._pair_str(preview_pair)}",
             status,
         ]
         for i, line in enumerate(lines):

@@ -1,16 +1,16 @@
 """Drop physics, gravity, and chain resolution for the hex board.
 
-Pair model:
-  A piece is two stacked hex tiles in one column (top tile + bottom tile).
-  When dropped into column C with bottom color B and top color T, both tiles
-  enter column C. The bottom tile lands first; the top tile lands directly
-  above it. Either tile can be swapped via right-click before dropping (handled
-  upstream by negating the swap flag).
+Pair model (flat-top odd-q, diagonal pair):
+  A piece is two adjacent hex tiles in DIFFERENT columns. With the cursor
+  selecting the left column C, the pair occupies columns C and C+1. Each
+  tile falls INDEPENDENTLY into its own column to that column's current
+  landing row (split physics — one tile can land much earlier than the other
+  if the columns have different heights).
 
-Split behavior (vertical only — pairs are vertical so only one column is used,
-which matches an odd-r layout where a pair occupies a single column). After
-EACH chain resolution gravity is re-applied per column, so cascades naturally
-form.
+  Right-click swaps which color is on the left vs right.
+
+After each chain resolution gravity is re-applied per column, so cascades
+form naturally.
 """
 from __future__ import annotations
 
@@ -48,10 +48,13 @@ def apply_gravity(board: Board) -> bool:
 
 # --- Chain resolution -------------------------------------------------------
 
-# Precompute neighbor offsets for both row parities to avoid per-cell branching.
+# Precompute neighbor offsets keyed by COLUMN parity (flat-top odd-q).
+# Index [0] = even column, [1] = odd column.
 _OFFSETS = (
-    np.array([(-1, -1), (-1, 0), (0, -1), (0, 1), (1, -1), (1, 0)], dtype=np.int32),
-    np.array([(-1,  0), (-1, 1), (0, -1), (0, 1), (1,  0), (1, 1)], dtype=np.int32),
+    np.array([(-1, 0), (1, 0), (-1, 1), (0, 1), (-1, -1), (0, -1)],
+             dtype=np.int32),
+    np.array([(-1, 0), (1, 0), (0, 1),  (1, 1), (0, -1),  (1, -1)],
+             dtype=np.int32),
 )
 
 
@@ -72,7 +75,7 @@ def find_clears(board: Board) -> List[List[Tuple[int, int]]]:
             while queue:
                 rr, cc = queue.popleft()
                 component.append((rr, cc))
-                offsets = _OFFSETS[rr % 2]
+                offsets = _OFFSETS[cc % 2]
                 for dr, dc in offsets:
                     nr, nc = rr + int(dr), cc + int(dc)
                     if (0 <= nr < rows and 0 <= nc < cols
@@ -107,12 +110,21 @@ def resolve_chains(board: Board, max_chain: int = 16) -> Tuple[int, int]:
 
 # --- Pair drop --------------------------------------------------------------
 
-def drop_pair(board: Board, col: int, bottom_color: int, top_color: int
-              ) -> bool:
-    """Place a vertical pair into `col`. Returns False if it cannot fit."""
-    landing = board.column_landing_row(col)
-    if landing < 1:
+def drop_pair(board: Board, left_col: int,
+              left_color: int, right_color: int) -> bool:
+    """Place a diagonal pair into columns (left_col, left_col + 1).
+
+    Each tile lands independently in its own column's current landing row.
+    Returns False if the placement cannot fit (either column is full or
+    out of bounds).
+    """
+    right_col = left_col + 1
+    if left_col < 0 or right_col >= board.cols:
         return False
-    board.grid[landing, col] = bottom_color
-    board.grid[landing - 1, col] = top_color
+    left_landing = board.column_landing_row(left_col)
+    right_landing = board.column_landing_row(right_col)
+    if left_landing < 0 or right_landing < 0:
+        return False
+    board.grid[left_landing, left_col] = left_color
+    board.grid[right_landing, right_col] = right_color
     return True
