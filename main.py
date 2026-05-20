@@ -75,7 +75,9 @@ def _handle_endgame(sc: ScreenCapture, tm: TemplateMatcher,
     return False
 
 
-def run(debug: bool = False) -> int:
+def run(debug: bool = False, probe: bool = False) -> int:
+    """Run the bot loop. If `probe=True` no clicks are sent; the bot just
+    prints what it detects so calibration can be verified."""
     cal = load_calibration()
     if cal is None:
         print("=" * 60)
@@ -114,10 +116,13 @@ def run(debug: bool = False) -> int:
     keyboard.add_hotkey("ctrl+alt+r", _request_recal)
     keyboard.add_hotkey("ctrl+alt+q", _quit)
 
-    print("Bot running. Ctrl+Alt+P pause, Ctrl+Alt+D debug, "
+    mode = "PROBE (no clicks)" if probe else "LIVE"
+    print(f"Bot running in {mode} mode. Ctrl+Alt+P pause, Ctrl+Alt+D debug, "
           "Ctrl+Alt+R recalibrate, Ctrl+Alt+Q quit.")
     last_board: Optional[np.ndarray] = None
     empty_frames = 0
+    last_diag_t = 0.0   # last time we printed a status line
+    DIAG_INTERVAL = 1.0  # seconds between status prints
 
     try:
         while not state["quit"]:
@@ -140,10 +145,21 @@ def run(debug: bool = False) -> int:
             preview_pair = _sample_pair_at(sc, classifier, cal.preview_pair_xy,
                                            cal.pair_dx, cal.pair_dy)
 
+            # Periodic diagnostics so the user can SEE what's being detected.
+            now = time.time()
+            if now - last_diag_t >= DIAG_INTERVAL:
+                last_diag_t = now
+                filled = int(np.count_nonzero(board_arr))
+                cur_str = f"{COLOR_NAMES.get(current_pair[0],'?')}/{COLOR_NAMES.get(current_pair[1],'?')}"
+                prev_str = f"{COLOR_NAMES.get(preview_pair[0],'?')}/{COLOR_NAMES.get(preview_pair[1],'?')}"
+                print(f"[diag] board_filled={filled}/{board_arr.size}  "
+                      f"cur={cur_str}  prev={prev_str}  "
+                      f"empty_frames={empty_frames}")
+
             # If the current pair can't be read, assume end-of-game UI is up.
             if current_pair[0] == EMPTY or current_pair[1] == EMPTY:
                 empty_frames += 1
-                if empty_frames >= 8:
+                if empty_frames >= 8 and not probe:
                     if _handle_endgame(sc, tm, mouse):
                         empty_frames = 0
                         time.sleep(1.0)
@@ -158,7 +174,14 @@ def run(debug: bool = False) -> int:
 
             if move is None:
                 # No legal placement. Wait a beat and re-check (likely overflow).
+                print("[diag] no legal move found (board overflow?)")
                 time.sleep(0.05)
+                continue
+
+            if probe:
+                print(f"[probe] WOULD play col={move.column} swap={move.swap} "
+                      f"score={move.score:.1f}")
+                time.sleep(0.5)
                 continue
 
             # Diagonal pair: cursor X is the midpoint between the two columns
@@ -189,6 +212,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="alchemist")
     parser.add_argument("--calibrate", action="store_true")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--probe", action="store_true",
+                        help="diagnostics only -- never click")
     parser.add_argument("--cols", type=int, default=7)
     parser.add_argument("--rows", type=int, default=8)
     args = parser.parse_args(argv)
@@ -196,7 +221,7 @@ def main(argv=None) -> int:
     if args.calibrate:
         run_calibration(cols=args.cols, rows=args.rows)
         return 0
-    return run(debug=args.debug)
+    return run(debug=args.debug, probe=args.probe)
 
 
 def _pause_before_exit(message: str = "") -> None:
