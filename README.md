@@ -6,7 +6,7 @@ match-3 with a diagonal pair. No memory reading, no OCR — just MSS screen
 capture, OpenCV HSV segmentation, a fast hex simulator, and PyAutoGUI mouse
 input.
 
-Board layout: **flat-top hexes, odd-q offset, 7 columns × 8 rows**. The
+Board layout: **flat-top hexes, odd-q offset, 8 columns × 10 rows**. The
 falling piece is **two adjacent hexes on the diagonal** (upper-left tile +
 lower-right tile), with split physics — each tile falls independently into
 its own column.
@@ -54,7 +54,7 @@ needed.
 ### Board geometry
 
 The board geometry (columns, rows, hex pitch) is inferred from the rectangle
-plus the `--cols` and `--rows` flags (defaults 7 columns × 8 rows, flat-top
+plus the `--cols` and `--rows` flags (defaults 8 columns × 10 rows, flat-top
 hexes in odd-q offset layout). Override in `calibration.json` as needed.
 
 The diagonal-pair geometry uses `pair_dx` / `pair_dy` (pixel offsets from the

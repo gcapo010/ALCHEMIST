@@ -226,8 +226,8 @@ def main(argv=None) -> int:
                         help="diagnostics only -- never click")
     parser.add_argument("--gui", action="store_true",
                         help="launch the Tkinter control panel")
-    parser.add_argument("--cols", type=int, default=7)
-    parser.add_argument("--rows", type=int, default=8)
+    parser.add_argument("--cols", type=int, default=8)
+    parser.add_argument("--rows", type=int, default=10)
     args = parser.parse_args(argv)
 
     if args.calibrate:

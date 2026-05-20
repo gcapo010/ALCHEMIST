@@ -29,8 +29,8 @@ class Calibration:
     board_br: Tuple[int, int] = (0, 0)
     current_pair_xy: Tuple[int, int] = (0, 0)
     preview_pair_xy: Tuple[int, int] = (0, 0)
-    cols: int = 7
-    rows: int = 8
+    cols: int = 8
+    rows: int = 10
     sample_radius: int = 4
     # Diagonal pair geometry: the two tiles sit at (cx - dx, cy - dy) and
     # (cx + dx, cy + dy) relative to the pair's center point. Left tile is the
@@ -79,7 +79,7 @@ def _wait_for_key_and_grab_mouse(prompt: str,
     return (int(pos[0]), int(pos[1]))
 
 
-def run_calibration(cols: int = 7, rows: int = 8,
+def run_calibration(cols: int = 8, rows: int = 10,
                     path: str = DEFAULT_CALIBRATION_PATH) -> Calibration:
     """Interactive calibration. Requires pyautogui + keyboard packages."""
     import pyautogui
