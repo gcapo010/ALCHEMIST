@@ -37,40 +37,68 @@ def _template_path(color_name: str, variant: str = "") -> str:
 
 
 class TileTemplateClassifier:
-    """Classifies a hex cell patch by best-matching template."""
+    """Classifies a hex cell patch by best-matching template.
+
+    Matching uses HUE histogram comparison rather than pixel-by-pixel
+    cross-correlation, so red tiles with a chicken icon and red tiles
+    with a potion icon are both recognised as red (their hue histograms
+    are dominated by the ring color either way). Pixels below a
+    saturation/value floor are dropped before histogramming so the
+    brown wood background can never tip a comparison.
+    """
+
+    SAT_FLOOR = 90
+    VAL_FLOOR = 60
+    HUE_BINS = 18    # 10-degree-wide bins covering hue 0..179
 
     def __init__(self, templates_dir: str = TEMPLATES_DIR,
-                 threshold: float = 0.55) -> None:
+                 threshold: float = 0.35) -> None:
         self.threshold = threshold
         self.templates: Dict[int, List[np.ndarray]] = {RED: [], BLUE: [], GREEN: []}
+        self.template_hists: Dict[int, List[np.ndarray]] = {RED: [], BLUE: [], GREEN: []}
         if not os.path.isdir(templates_dir):
             return
         for color_name, color_id in _NAME_TO_COLOR.items():
             for path in sorted(glob.glob(
                     os.path.join(templates_dir, f"tile_{color_name}*.png"))):
                 img = cv2.imread(path, cv2.IMREAD_COLOR)
-                if img is not None:
-                    self.templates[color_id].append(img)
+                if img is None:
+                    continue
+                self.templates[color_id].append(img)
+                self.template_hists[color_id].append(self._hue_hist(img))
 
     def has_templates(self) -> bool:
         return any(len(v) for v in self.templates.values())
 
+    def _hue_hist(self, bgr: np.ndarray) -> np.ndarray:
+        """Hue histogram of the saturated pixels in a patch, L1-normalised."""
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        sat_mask = cv2.inRange(
+            hsv,
+            np.array((0, self.SAT_FLOOR, self.VAL_FLOOR), dtype=np.uint8),
+            np.array((180, 255, 255), dtype=np.uint8))
+        hist = cv2.calcHist([hsv], [0], sat_mask, [self.HUE_BINS], [0, 180])
+        s = float(hist.sum())
+        if s <= 0:
+            return hist.flatten()
+        return (hist / s).flatten()
+
     def classify_patch(self, bgr_patch: np.ndarray) -> int:
         if bgr_patch.size == 0 or not self.has_templates():
             return EMPTY
+        hist = self._hue_hist(bgr_patch)
+        if hist.sum() <= 0:
+            return EMPTY     # no saturated pixels at all -- empty cell
         best_color = EMPTY
         best_score = self.threshold
-        for color_id, tmpls in self.templates.items():
-            for t in tmpls:
-                if bgr_patch.shape[0] < t.shape[0] or bgr_patch.shape[1] < t.shape[1]:
-                    # Patch smaller than template -- resize the template down.
-                    th = min(t.shape[0], bgr_patch.shape[0])
-                    tw = min(t.shape[1], bgr_patch.shape[1])
-                    t_use = cv2.resize(t, (tw, th))
-                else:
-                    t_use = t
-                res = cv2.matchTemplate(bgr_patch, t_use, cv2.TM_CCOEFF_NORMED)
-                score = float(res.max())
+        for color_id, hists in self.template_hists.items():
+            for th in hists:
+                if th.sum() <= 0:
+                    continue
+                # Correlation: 1.0 = identical, 0 = uncorrelated, -1 = opposite.
+                score = float(cv2.compareHist(hist.astype(np.float32),
+                                              th.astype(np.float32),
+                                              cv2.HISTCMP_CORREL))
                 if score > best_score:
                     best_score = score
                     best_color = color_id
