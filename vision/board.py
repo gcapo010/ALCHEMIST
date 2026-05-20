@@ -26,12 +26,12 @@ class HexGrid:
     row_spacing: float    # vertical distance between adjacent rows in the same column
     cols: int
     rows: int
-    sample_radius: int = 4
+    sample_radius: int = 14
     col_offset: float = 0.5  # odd columns shifted DOWN by this many row_spacings
 
     @classmethod
     def from_rect(cls, top_left: Tuple[int, int], bottom_right: Tuple[int, int],
-                  cols: int, rows: int, sample_radius: int = 4) -> "HexGrid":
+                  cols: int, rows: int, sample_radius: int = 14) -> "HexGrid":
         x1, y1 = top_left
         x2, y2 = bottom_right
         width = x2 - x1
@@ -80,7 +80,7 @@ class BoardReader:
                 x1 = min(W, px + r + 1)
                 y1 = min(H, py + r + 1)
                 patch = frame_bgr[y0:y1, x0:x1]
-                board[ry, cx] = self.classifier.classify_mean_hsv(patch)
+                board[ry, cx] = self.classifier.classify_patch(patch)
         return board
 
     def cell_screen_xy(self, col: int, row: int) -> Tuple[int, int]:

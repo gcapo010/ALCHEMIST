@@ -33,13 +33,13 @@ def _sample_pair_at(sc: ScreenCapture, classifier: ColorClassifier,
     """Sample the two diagonal tiles. Returns (left_color, right_color)
     where 'left' is the upper-left tile and 'right' is the lower-right tile."""
     cx, cy = center_xy
-    r = 6
+    r = 16
     left_region = Region(cx - dx - r, cy - dy - r, 2 * r + 1, 2 * r + 1)
     right_region = Region(cx + dx - r, cy + dy - r, 2 * r + 1, 2 * r + 1)
     left_patch = sc.grab(left_region)
     right_patch = sc.grab(right_region)
-    return (classifier.classify_mean_hsv(left_patch),
-            classifier.classify_mean_hsv(right_patch))
+    return (classifier.classify_patch(left_patch),
+            classifier.classify_patch(right_patch))
 
 
 def _setup(cal: Calibration):
