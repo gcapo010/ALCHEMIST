@@ -50,6 +50,11 @@ class TileTemplateClassifier:
     SAT_FLOOR = 90
     VAL_FLOOR = 60
     HUE_BINS = 18    # 10-degree-wide bins covering hue 0..179
+    # The colored ring is on the OUTSIDE of each tile; the icon (which can
+    # have stray pixels of other colors -- e.g. a red-tipped crab claw on
+    # a blue tile) sits in the middle. Drop the inner disc when computing
+    # histograms so the icon can't pollute the vote.
+    INNER_MASK_FRAC = 0.55   # mask radius as fraction of patch half-size
 
     def __init__(self, templates_dir: str = TEMPLATES_DIR,
                  threshold: float = 0.35) -> None:
@@ -70,14 +75,27 @@ class TileTemplateClassifier:
     def has_templates(self) -> bool:
         return any(len(v) for v in self.templates.values())
 
+    def _ring_mask(self, shape: Tuple[int, int]) -> np.ndarray:
+        """Boolean mask selecting only the outer ring (icon excluded)."""
+        h, w = shape
+        cy, cx = h / 2.0, w / 2.0
+        ys = np.arange(h).reshape(-1, 1)
+        xs = np.arange(w).reshape(1, -1)
+        # Distance from centre, normalised so the patch corner = 1.
+        d = np.sqrt((ys - cy) ** 2 + (xs - cx) ** 2)
+        outer = min(cy, cx)
+        return (d >= outer * self.INNER_MASK_FRAC).astype(np.uint8) * 255
+
     def _hue_hist(self, bgr: np.ndarray) -> np.ndarray:
-        """Hue histogram of the saturated pixels in a patch, L1-normalised."""
+        """Hue histogram of saturated ring pixels only (icon masked out)."""
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        ring = self._ring_mask(bgr.shape[:2])
         sat_mask = cv2.inRange(
             hsv,
             np.array((0, self.SAT_FLOOR, self.VAL_FLOOR), dtype=np.uint8),
             np.array((180, 255, 255), dtype=np.uint8))
-        hist = cv2.calcHist([hsv], [0], sat_mask, [self.HUE_BINS], [0, 180])
+        mask = cv2.bitwise_and(sat_mask, ring)
+        hist = cv2.calcHist([hsv], [0], mask, [self.HUE_BINS], [0, 180])
         s = float(hist.sum())
         if s <= 0:
             return hist.flatten()
