@@ -122,6 +122,59 @@ class BotRunner(threading.Thread):
                 return True
         return False
 
+    def save_snapshot(self, out_path: str) -> str:
+        """Capture a full-screen frame and draw every sample point on it.
+
+        - Cyan rectangle: board capture region (board_tl -> board_br)
+        - Yellow dots: per-cell sample centers (labeled col,row)
+        - Magenta crosses: current-pair sample points (after parking cursor)
+        - Orange crosses: preview-pair sample points
+        """
+        import cv2
+        import os
+        import mss
+
+        self.mouse.move_to(self.cal.current_pair_xy)
+        time.sleep(0.05)
+
+        with mss.mss() as ms:
+            mon = ms.monitors[1]
+        full = Region(mon["left"], mon["top"], mon["width"], mon["height"])
+        frame = self.sc.grab(full)
+        img = frame.copy()
+        ox, oy = full.left, full.top
+
+        x1, y1 = self.cal.board_tl
+        x2, y2 = self.cal.board_br
+        cv2.rectangle(img, (x1 - ox, y1 - oy), (x2 - ox, y2 - oy),
+                      (255, 255, 0), 2)
+
+        for r in range(self.grid.rows):
+            for c in range(self.grid.cols):
+                sx, sy = self.grid.cell_center(c, r)
+                cv2.circle(img, (sx - ox, sy - oy), 3, (0, 255, 255), -1)
+                cv2.putText(img, f"{c},{r}",
+                            (sx - ox + 5, sy - oy - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.3,
+                            (0, 255, 255), 1, cv2.LINE_AA)
+
+        def _mark(center, color, label):
+            cx, cy = center
+            for px, py in [(cx - self.cal.pair_dx, cy - self.cal.pair_dy),
+                           (cx + self.cal.pair_dx, cy + self.cal.pair_dy)]:
+                cv2.drawMarker(img, (px - ox, py - oy), color,
+                               cv2.MARKER_CROSS, 18, 2)
+            cv2.circle(img, (cx - ox, cy - oy), 5, color, 2)
+            cv2.putText(img, label, (cx - ox + 8, cy - oy + 6),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+
+        _mark(self.cal.current_pair_xy, (255, 0, 255), "CUR")
+        _mark(self.cal.preview_pair_xy, (0, 165, 255), "PREV")
+
+        out_path = os.path.abspath(out_path)
+        cv2.imwrite(out_path, img)
+        return out_path
+
     # --- main loop ---
 
     def run(self) -> None:
@@ -224,7 +277,7 @@ class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("ALCHEMIST — control panel")
-        self.geometry("760x600")
+        self.geometry("880x620")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.log_q: queue.Queue = queue.Queue(maxsize=500)
@@ -250,8 +303,11 @@ class App(tk.Tk):
         self.btn_cal = ttk.Button(top, text="Recalibrate",
                                   command=self._on_calibrate)
         self.btn_cal.grid(row=0, column=3, padx=4)
+        self.btn_snap = ttk.Button(top, text="Save snapshot",
+                                   command=self._on_snapshot)
+        self.btn_snap.grid(row=0, column=4, padx=4)
         self.btn_quit = ttk.Button(top, text="Quit", command=self._on_close)
-        self.btn_quit.grid(row=0, column=4, padx=4)
+        self.btn_quit.grid(row=0, column=5, padx=4)
 
         mid = ttk.Frame(self, padding=(10, 0))
         mid.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -335,6 +391,29 @@ class App(tk.Tk):
             self._append_log("calibration saved.")
         except Exception as e:
             self._append_log(f"calibration failed: {e!r}")
+
+    def _on_snapshot(self) -> None:
+        # Build a transient runner if none exists, so the snapshot can be
+        # taken before pressing Start.
+        runner = self.runner
+        temp = False
+        if runner is None:
+            cal = load_calibration()
+            if cal is None:
+                self._append_log("ERROR: no calibration.json; can't snapshot.")
+                return
+            runner = BotRunner(cal, self.log_q)
+            temp = True
+        try:
+            import os
+            out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "debug_snapshot.png")
+            path = runner.save_snapshot(out)
+            self._append_log(f"snapshot saved: {path}")
+        except Exception as e:
+            self._append_log(f"snapshot failed: {e!r}")
+        if temp:
+            runner.stop()
 
     def _on_close(self) -> None:
         if self.runner is not None:
