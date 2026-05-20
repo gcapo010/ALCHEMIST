@@ -191,7 +191,7 @@ def auto_detect_ranges_from_frame(frame_bgr: np.ndarray,
     # shade of each color: red can be pink/magenta-ish, green can be
     # yellow-green or teal). Red wraps around so it has two intervals.
     zones: Dict[int, List[Tuple[int, int]]] = {
-        RED: [(0, 12), (155, 179)],
+        RED: [(160, 179)],
         BLUE: [(85, 130)],
         GREEN: [(35, 90)],
     }
