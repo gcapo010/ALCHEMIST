@@ -100,6 +100,11 @@ def run_calibration(cols: int = 8, rows: int = 10,
         "      showing the NEXT pair on the parchment).")
     cal.drop_y = min(cal.board_tl[1], cal.board_br[1]) - 10
 
+    # Persist the geometry NOW so a later crash (e.g. in template capture)
+    # doesn't lose the four corner clicks the user just spent time on.
+    cal.save(path)
+    print(f"\n  (geometry saved to {path})")
+
     # Auto-detect HSV ranges from the visible board (kept as a fallback
     # for when no tile templates are saved yet).
     classifier = ColorClassifier()
