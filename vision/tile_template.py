@@ -39,32 +39,32 @@ def _template_path(color_name: str, variant: str = "") -> str:
 class TileTemplateClassifier:
     """Classifies a hex cell patch by best-matching template.
 
-    Matching uses HUE histogram comparison rather than pixel-by-pixel
-    cross-correlation, so red tiles with a chicken icon and red tiles
-    with a potion icon are both recognised as red (their hue histograms
-    are dominated by the ring color either way). Pixels below a
-    saturation/value floor are dropped before histogramming so the
-    brown wood background can never tip a comparison.
+    For each template we precompute its dominant hue (the most common
+    hue among saturated ring pixels). At classification time we look at
+    how many of the cell's saturated ring pixels fall within ``HUE_PAD``
+    of each template's dominant hue and pick the template with the most
+    hits. Wood and other muddy backgrounds don't match any tile
+    template's hue, so they correctly return EMPTY -- even if some
+    wood pixels happen to be saturated enough to pass the gate.
     """
 
-    SAT_FLOOR = 70
-    VAL_FLOOR = 50
-    HUE_BINS = 18    # 10-degree-wide bins covering hue 0..179
+    SAT_FLOOR = 80
+    VAL_FLOOR = 60
+    HUE_BINS = 36           # 5-degree bins
+    HUE_PAD = 12            # +/- this many hue units around a template's hue
     # The colored ring is on the OUTSIDE of each tile; the icon (which can
     # have stray pixels of other colors -- e.g. a red-tipped crab claw on
     # a blue tile) sits in the middle. Drop the inner disc when computing
     # histograms so the icon can't pollute the vote.
-    INNER_MASK_FRAC = 0.55   # mask radius as fraction of patch half-size
-    # An empty cell, when sampled, may still pick up bleed-over pixels
-    # from a neighbouring tile. Require this many saturated ring pixels
-    # before we'll consider the cell non-empty.
-    MIN_RING_PIXELS = 35
+    INNER_MASK_FRAC = 0.55
+    # Require this many ring pixels matching a template's hue before
+    # classifying a cell as that color.
+    MIN_MATCH_PIXELS = 25
 
-    def __init__(self, templates_dir: str = TEMPLATES_DIR,
-                 threshold: float = 0.35) -> None:
-        self.threshold = threshold
+    def __init__(self, templates_dir: str = TEMPLATES_DIR) -> None:
         self.templates: Dict[int, List[np.ndarray]] = {RED: [], BLUE: [], GREEN: []}
-        self.template_hists: Dict[int, List[np.ndarray]] = {RED: [], BLUE: [], GREEN: []}
+        # Per template: the dominant hue of its saturated ring pixels.
+        self.template_hues: Dict[int, List[int]] = {RED: [], BLUE: [], GREEN: []}
         if not os.path.isdir(templates_dir):
             return
         for color_name, color_id in _NAME_TO_COLOR.items():
@@ -73,88 +73,87 @@ class TileTemplateClassifier:
                 img = cv2.imread(path, cv2.IMREAD_COLOR)
                 if img is None:
                     continue
+                dom = self._dominant_hue(img)
+                if dom is None:
+                    continue
                 self.templates[color_id].append(img)
-                th, _ = self._hue_hist(img)
-                self.template_hists[color_id].append(th)
+                self.template_hues[color_id].append(dom)
 
     def has_templates(self) -> bool:
         return any(len(v) for v in self.templates.values())
 
     def _ring_mask(self, shape: Tuple[int, int]) -> np.ndarray:
-        """Boolean mask selecting only the outer ring (icon excluded)."""
         h, w = shape
         cy, cx = h / 2.0, w / 2.0
         ys = np.arange(h).reshape(-1, 1)
         xs = np.arange(w).reshape(1, -1)
-        # Distance from centre, normalised so the patch corner = 1.
         d = np.sqrt((ys - cy) ** 2 + (xs - cx) ** 2)
         outer = min(cy, cx)
         return (d >= outer * self.INNER_MASK_FRAC).astype(np.uint8) * 255
 
-    def _hue_hist(self, bgr: np.ndarray) -> Tuple[np.ndarray, float]:
-        """Hue histogram of saturated ring pixels and the raw pixel count.
-
-        The histogram is L1-normalised so a faint ring and a bright ring
-        compare on the same axis. The count is returned separately so the
-        caller can tell "almost no saturated pixels" (empty cell) apart
-        from "a strong ring".
-        """
+    def _saturated_hues(self, bgr: np.ndarray) -> np.ndarray:
+        """Return the array of hues from saturated ring pixels."""
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-        ring = self._ring_mask(bgr.shape[:2])
-        sat_mask = cv2.inRange(
-            hsv,
-            np.array((0, self.SAT_FLOOR, self.VAL_FLOOR), dtype=np.uint8),
-            np.array((180, 255, 255), dtype=np.uint8))
-        mask = cv2.bitwise_and(sat_mask, ring)
-        hist = cv2.calcHist([hsv], [0], mask, [self.HUE_BINS], [0, 180])
-        s = float(hist.sum())
-        if s <= 0:
-            return hist.flatten(), 0.0
-        return (hist / s).flatten(), s
+        ring = self._ring_mask(bgr.shape[:2]) > 0
+        sat_ok = (hsv[:, :, 1] >= self.SAT_FLOOR) & (hsv[:, :, 2] >= self.VAL_FLOOR)
+        keep = ring & sat_ok
+        return hsv[keep][:, 0].astype(np.int32)
+
+    def _dominant_hue(self, bgr: np.ndarray) -> Optional[int]:
+        hues = self._saturated_hues(bgr)
+        if hues.size == 0:
+            return None
+        # Histogram on the full 0..179 range; pick the peak bin's centre.
+        hist = np.bincount(hues, minlength=180).astype(np.float32)
+        kernel = np.ones(5) / 5.0
+        smooth = np.convolve(hist, kernel, mode="same")
+        # Red wraps -- to find the peak correctly, double the array and
+        # search a 180-wide window across the wrap.
+        doubled = np.concatenate([smooth, smooth])
+        best_idx = int(np.argmax(doubled[:180 + 180]))
+        return best_idx % 180
+
+    def _count_in_band(self, hues: np.ndarray, centre: int) -> int:
+        """Count how many hues fall within HUE_PAD of `centre` (wrap-aware)."""
+        if hues.size == 0:
+            return 0
+        diff = np.abs(hues - centre)
+        wrap_diff = np.minimum(diff, 180 - diff)
+        return int(np.count_nonzero(wrap_diff <= self.HUE_PAD))
 
     def classify_patch(self, bgr_patch: np.ndarray) -> int:
         if bgr_patch.size == 0 or not self.has_templates():
             return EMPTY
-        hist, count = self._hue_hist(bgr_patch)
-        if count < self.MIN_RING_PIXELS:
-            return EMPTY     # too few ring pixels to be a real tile
+        hues = self._saturated_hues(bgr_patch)
+        if hues.size < self.MIN_MATCH_PIXELS:
+            return EMPTY
         best_color = EMPTY
-        best_score = self.threshold
-        for color_id, hists in self.template_hists.items():
-            for th in hists:
-                if th.sum() <= 0:
-                    continue
-                # Correlation: 1.0 = identical, 0 = uncorrelated, -1 = opposite.
-                score = float(cv2.compareHist(hist.astype(np.float32),
-                                              th.astype(np.float32),
-                                              cv2.HISTCMP_CORREL))
-                if score > best_score:
-                    best_score = score
+        best_count = self.MIN_MATCH_PIXELS - 1
+        for color_id, dom_list in self.template_hues.items():
+            for dom in dom_list:
+                cnt = self._count_in_band(hues, dom)
+                if cnt > best_count:
+                    best_count = cnt
                     best_color = color_id
         return best_color
 
     def classify_patch_verbose(self, bgr_patch: np.ndarray
-                               ) -> Tuple[int, float, float]:
-        """Like classify_patch but returns (color_id, best_score, ring_count)
-        so callers can log what's happening cell-by-cell."""
+                               ) -> Tuple[int, int, int]:
+        """Like classify_patch but returns (color_id, matching_pixels, total_ring_pixels)."""
         if bgr_patch.size == 0 or not self.has_templates():
-            return (EMPTY, 0.0, 0.0)
-        hist, count = self._hue_hist(bgr_patch)
-        if count < self.MIN_RING_PIXELS:
-            return (EMPTY, 0.0, count)
+            return (EMPTY, 0, 0)
+        hues = self._saturated_hues(bgr_patch)
+        if hues.size < self.MIN_MATCH_PIXELS:
+            return (EMPTY, 0, int(hues.size))
         best_color = EMPTY
-        best_score = self.threshold
-        for color_id, hists in self.template_hists.items():
-            for th in hists:
-                if th.sum() <= 0:
-                    continue
-                score = float(cv2.compareHist(hist.astype(np.float32),
-                                              th.astype(np.float32),
-                                              cv2.HISTCMP_CORREL))
-                if score > best_score:
-                    best_score = score
+        best_count = self.MIN_MATCH_PIXELS - 1
+        for color_id, dom_list in self.template_hues.items():
+            for dom in dom_list:
+                cnt = self._count_in_band(hues, dom)
+                if cnt > best_count:
+                    best_count = cnt
                     best_color = color_id
-        return (best_color, best_score, count)
+        return (best_color, best_count, int(hues.size))
 
 
 def save_template(color_name: str, bgr_patch: np.ndarray,
