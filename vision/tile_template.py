@@ -47,8 +47,8 @@ class TileTemplateClassifier:
     brown wood background can never tip a comparison.
     """
 
-    SAT_FLOOR = 90
-    VAL_FLOOR = 60
+    SAT_FLOOR = 70
+    VAL_FLOOR = 50
     HUE_BINS = 18    # 10-degree-wide bins covering hue 0..179
     # The colored ring is on the OUTSIDE of each tile; the icon (which can
     # have stray pixels of other colors -- e.g. a red-tipped crab claw on
@@ -58,7 +58,7 @@ class TileTemplateClassifier:
     # An empty cell, when sampled, may still pick up bleed-over pixels
     # from a neighbouring tile. Require this many saturated ring pixels
     # before we'll consider the cell non-empty.
-    MIN_RING_PIXELS = 80
+    MIN_RING_PIXELS = 35
 
     def __init__(self, templates_dir: str = TEMPLATES_DIR,
                  threshold: float = 0.35) -> None:
@@ -132,6 +132,29 @@ class TileTemplateClassifier:
                     best_score = score
                     best_color = color_id
         return best_color
+
+    def classify_patch_verbose(self, bgr_patch: np.ndarray
+                               ) -> Tuple[int, float, float]:
+        """Like classify_patch but returns (color_id, best_score, ring_count)
+        so callers can log what's happening cell-by-cell."""
+        if bgr_patch.size == 0 or not self.has_templates():
+            return (EMPTY, 0.0, 0.0)
+        hist, count = self._hue_hist(bgr_patch)
+        if count < self.MIN_RING_PIXELS:
+            return (EMPTY, 0.0, count)
+        best_color = EMPTY
+        best_score = self.threshold
+        for color_id, hists in self.template_hists.items():
+            for th in hists:
+                if th.sum() <= 0:
+                    continue
+                score = float(cv2.compareHist(hist.astype(np.float32),
+                                              th.astype(np.float32),
+                                              cv2.HISTCMP_CORREL))
+                if score > best_score:
+                    best_score = score
+                    best_color = color_id
+        return (best_color, best_score, count)
 
 
 def save_template(color_name: str, bgr_patch: np.ndarray,
