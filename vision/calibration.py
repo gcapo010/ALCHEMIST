@@ -100,15 +100,8 @@ def run_calibration(cols: int = 8, rows: int = 10,
         "      showing the NEXT pair on the parchment).")
     cal.drop_y = min(cal.board_tl[1], cal.board_br[1]) - 10
 
-    # Color auto-detection: grab the board image and find the 3 dominant
-    # saturated hues. Much more robust than asking the user to click each
-    # tile precisely on its colored ring.
-    print("\nAuto-detecting tile colors from the visible board...")
-    print("  Make sure the playable board has a good mix of red, blue,")
-    print("  and green tiles visible right now, then press Ctrl+Alt+Space.")
-    import keyboard as _kb
-    _kb.wait("ctrl+alt+space")
-    time.sleep(0.25)
+    # Auto-detect HSV ranges from the visible board (kept as a fallback
+    # for when no tile templates are saved yet).
     classifier = ColorClassifier()
     try:
         from .capture import ScreenCapture, Region
@@ -118,12 +111,33 @@ def run_calibration(cols: int = 8, rows: int = 10,
         frame = sc.grab(region)
         ranges = auto_detect_ranges_from_frame(frame)
         classifier.ranges = ranges
-        for cid, rngs in sorted(ranges.items()):
-            for r in rngs:
-                print(f"  {COLOR_NAMES[cid]}: lo={tuple(r.lo)} hi={tuple(r.hi)}")
     except Exception as e:
         print(f"  (auto color detection failed: {e}; using defaults)")
     cal.color_ranges = classifier.to_dict()
+
+    # Tile templates: capture one screenshot per color so the bot can
+    # classify cells by best-matching-template instead of color ranges.
+    print("\nTile templates: hover the CENTER of each colored tile and "
+          "press Ctrl+Alt+Space.")
+    print("  We'll save one reference image per color so the bot can")
+    print("  identify tiles by appearance, not by HSV ranges.")
+    try:
+        from .capture import ScreenCapture, Region
+        from .tile_template import save_template
+        sc = ScreenCapture()
+        # Template size: match the runtime sample radius so the captured
+        # image is the same scale as the cell patches the bot extracts.
+        r = max(cal.sample_radius, 14)
+        for name in ("red", "blue", "green"):
+            xy = _wait_for_key_and_grab_mouse(
+                f"  hover the CENTER of a {name.upper()} tile.")
+            region = Region(xy[0] - r, xy[1] - r, 2 * r + 1, 2 * r + 1)
+            patch = sc.grab(region)
+            path = save_template(name, patch)
+            print(f"  {name}: saved template -> {path}")
+    except Exception as e:
+        print(f"  (template capture skipped: {e})")
+
     cal.save(path)
     print(f"\nSaved calibration to {path}")
     return cal

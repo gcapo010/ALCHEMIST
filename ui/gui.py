@@ -57,20 +57,29 @@ class BotRunner(threading.Thread):
         self.sc = ScreenCapture()
         self.classifier = (ColorClassifier.from_dict(cal.color_ranges)
                            if cal.color_ranges else ColorClassifier())
+        from vision.tile_template import TileTemplateClassifier
+        self.tile_classifier = TileTemplateClassifier()
         self.region = Region.from_corners(cal.board_tl, cal.board_br)
         self.grid = HexGrid.from_rect(cal.board_tl, cal.board_br,
                                       cal.cols, cal.rows,
                                       sample_radius=cal.sample_radius)
         self.reader = BoardReader(self.grid, self.classifier,
-                                  region_origin=(self.region.left, self.region.top))
+                                  region_origin=(self.region.left, self.region.top),
+                                  tile_classifier=self.tile_classifier)
         self.tm = TemplateMatcher()
         self.mouse = MouseController()
-        # Log loaded HSV ranges so we can see what calibration produced.
         from vision.color import COLOR_NAMES
-        for cid, rngs in sorted(self.classifier.ranges.items()):
-            name = COLOR_NAMES.get(cid, str(cid))
-            for r in rngs:
-                self._log(f"hsv {name}: lo={tuple(r.lo)} hi={tuple(r.hi)}")
+        if self.tile_classifier.has_templates():
+            counts = ", ".join(
+                f"{COLOR_NAMES[cid]}={len(v)}"
+                for cid, v in sorted(self.tile_classifier.templates.items()))
+            self._log(f"tile templates loaded: {counts}")
+        else:
+            self._log("no tile templates -- falling back to HSV classification")
+            for cid, rngs in sorted(self.classifier.ranges.items()):
+                name = COLOR_NAMES.get(cid, str(cid))
+                for r in rngs:
+                    self._log(f"hsv {name}: lo={tuple(r.lo)} hi={tuple(r.hi)}")
 
     # --- control api (called from GUI thread) ---
 
@@ -106,11 +115,14 @@ class BotRunner(threading.Thread):
     def _sample_pair(self, center_xy: Tuple[int, int]) -> Tuple[int, int]:
         dx, dy = self.cal.pair_dx, self.cal.pair_dy
         cx, cy = center_xy
-        r = 6
+        r = max(self.cal.sample_radius, 14)
         l = self.sc.grab(Region(cx - dx - r, cy - dy - r, 2 * r + 1, 2 * r + 1))
         rr = self.sc.grab(Region(cx + dx - r, cy + dy - r, 2 * r + 1, 2 * r + 1))
-        return (self.classifier.classify_mean_hsv(l),
-                self.classifier.classify_mean_hsv(rr))
+        if self.tile_classifier.has_templates():
+            return (self.tile_classifier.classify_patch(l),
+                    self.tile_classifier.classify_patch(rr))
+        return (self.classifier.classify_patch(l),
+                self.classifier.classify_patch(rr))
 
     def _handle_endgame(self) -> bool:
         import mss

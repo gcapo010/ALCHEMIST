@@ -48,12 +48,20 @@ def _setup(cal: Calibration):
         classifier = ColorClassifier.from_dict(cal.color_ranges)
     else:
         classifier = ColorClassifier()
+    from vision.tile_template import TileTemplateClassifier
+    tile_classifier = TileTemplateClassifier()
 
     region = Region.from_corners(cal.board_tl, cal.board_br)
     grid = HexGrid.from_rect(cal.board_tl, cal.board_br,
                              cal.cols, cal.rows, sample_radius=cal.sample_radius)
-    reader = BoardReader(grid, classifier, region_origin=(region.left, region.top))
-    return sc, classifier, region, grid, reader
+    reader = BoardReader(grid, classifier,
+                         region_origin=(region.left, region.top),
+                         tile_classifier=tile_classifier)
+    # The pair sampler is given whichever classifier is active. The
+    # template classifier exposes the same `classify_patch` API as the
+    # HSV one, so the caller doesn't need to special-case.
+    active = tile_classifier if tile_classifier.has_templates() else classifier
+    return sc, active, region, grid, reader
 
 
 def _handle_endgame(sc: ScreenCapture, tm: TemplateMatcher,

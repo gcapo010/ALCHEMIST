@@ -60,10 +60,14 @@ class BoardReader:
     """Convert a board-region BGR frame into a (rows, cols) int8 ndarray."""
 
     def __init__(self, grid: HexGrid, classifier: ColorClassifier,
-                 region_origin: Tuple[int, int]) -> None:
+                 region_origin: Tuple[int, int],
+                 tile_classifier=None) -> None:
         self.grid = grid
         self.classifier = classifier
         self.region_origin = region_origin
+        # Optional template-based classifier. If supplied AND it has
+        # templates loaded, it takes precedence over the HSV classifier.
+        self.tile_classifier = tile_classifier
 
     def read(self, frame_bgr: np.ndarray) -> np.ndarray:
         rows, cols = self.grid.rows, self.grid.cols
@@ -71,6 +75,8 @@ class BoardReader:
         r = self.grid.sample_radius
         ox, oy = self.region_origin
         H, W = frame_bgr.shape[:2]
+        use_templates = (self.tile_classifier is not None
+                         and self.tile_classifier.has_templates())
         for ry in range(rows):
             for cx in range(cols):
                 sx, sy = self.grid.cell_center(cx, ry)
@@ -80,7 +86,10 @@ class BoardReader:
                 x1 = min(W, px + r + 1)
                 y1 = min(H, py + r + 1)
                 patch = frame_bgr[y0:y1, x0:x1]
-                board[ry, cx] = self.classifier.classify_patch(patch)
+                if use_templates:
+                    board[ry, cx] = self.tile_classifier.classify_patch(patch)
+                else:
+                    board[ry, cx] = self.classifier.classify_patch(patch)
         return board
 
     def cell_screen_xy(self, col: int, row: int) -> Tuple[int, int]:
