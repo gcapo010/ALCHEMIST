@@ -108,8 +108,9 @@ def run_calibration(cols: int = 8, rows: int = 10,
         from .capture import ScreenCapture, Region
         sc = ScreenCapture()
         for color_id, name in [(RED, "RED"), (BLUE, "BLUE"), (GREEN, "GREEN")]:
-            xy = _wait_for_key_and_grab_mouse(f"  hover a {name} tile.")
-            r = 6
+            xy = _wait_for_key_and_grab_mouse(
+                f"  hover the CENTER of a {name} tile.")
+            r = 24
             region = Region(xy[0] - r, xy[1] - r, 2 * r + 1, 2 * r + 1)
             patch = sc.grab(region)
             classifier.tune_from_sample(color_id, patch)

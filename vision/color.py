@@ -99,14 +99,26 @@ class ColorClassifier:
 
     def tune_from_sample(self, color_id: int, bgr_patch: np.ndarray,
                          h_pad: int = 12, sv_pad: int = 50) -> None:
-        """Set the HSV range for one color from a sample patch (mean HSV).
+        """Set the HSV range for one color from a sample patch.
 
-        Hue is padded a bit because tile borders have gradients, but the
-        saturation/value floor stays high so muddy background wood (which
-        has low saturation) doesn't fall into the range.
+        The patch is expected to cover most of a hex tile. Tile icons and
+        background wood are filtered out by only keeping highly saturated,
+        not-too-dark pixels; the hue is then taken as the median over the
+        remaining ring pixels so a brown icon at the center can't drag the
+        mean toward orange.
         """
         hsv = cv2.cvtColor(bgr_patch, cv2.COLOR_BGR2HSV).reshape(-1, 3)
-        h, s, v = hsv.mean(axis=0)
+        sat = hsv[:, 1]
+        val = hsv[:, 2]
+        keep = (sat >= 140) & (val >= 80)
+        if not np.any(keep):
+            keep = (sat >= 100) & (val >= 60)
+        if not np.any(keep):
+            keep = np.ones(len(hsv), dtype=bool)
+        ring = hsv[keep]
+        h = float(np.median(ring[:, 0]))
+        s = float(np.median(ring[:, 1]))
+        v = float(np.median(ring[:, 2]))
         lo = (max(0, int(h) - h_pad), max(90, int(s) - sv_pad),
               max(70, int(v) - sv_pad))
         hi = (min(180, int(h) + h_pad), 255, 255)
