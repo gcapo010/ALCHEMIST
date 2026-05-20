@@ -34,11 +34,11 @@ class HSVRange:
 # Sensible default HSV ranges. Calibration can override these in calibration.json.
 DEFAULT_COLOR_RANGES: Dict[int, List[HSVRange]] = {
     RED: [
-        HSVRange((0, 80, 60), (12, 255, 255)),
-        HSVRange((165, 80, 60), (180, 255, 255)),
+        HSVRange((0, 130, 90), (8, 255, 255)),
+        HSVRange((170, 130, 90), (180, 255, 255)),
     ],
-    BLUE: [HSVRange((88, 80, 60), (130, 255, 255))],
-    GREEN: [HSVRange((35, 70, 50), (85, 255, 255))],
+    BLUE: [HSVRange((90, 110, 80), (128, 255, 255))],
+    GREEN: [HSVRange((38, 90, 60), (82, 255, 255))],
 }
 
 
@@ -60,6 +60,10 @@ class ColorClassifier:
             return EMPTY
         hsv = cv2.cvtColor(bgr_patch, cv2.COLOR_BGR2HSV)
         total = hsv.shape[0] * hsv.shape[1]
+        # Drop muddy / dark background pixels from the vote entirely so the
+        # brown wood never accumulates "almost matches red" pixels.
+        sat_gate = cv2.inRange(hsv, np.array((0, 90, 70), dtype=np.uint8),
+                               np.array((180, 255, 255), dtype=np.uint8))
         best_color = EMPTY
         best_score = self.min_fill * total
         for color_id, rngs in self.ranges.items():
@@ -67,6 +71,7 @@ class ColorClassifier:
             for r in rngs:
                 m = cv2.inRange(hsv, np.array(r.lo, dtype=np.uint8),
                                 np.array(r.hi, dtype=np.uint8))
+                m = cv2.bitwise_and(m, sat_gate)
                 mask_total += int(cv2.countNonZero(m))
             if mask_total > best_score:
                 best_score = mask_total
@@ -93,17 +98,17 @@ class ColorClassifier:
     # --- Auto-tuning helpers ---------------------------------------------
 
     def tune_from_sample(self, color_id: int, bgr_patch: np.ndarray,
-                         h_pad: int = 18, sv_pad: int = 80) -> None:
+                         h_pad: int = 12, sv_pad: int = 50) -> None:
         """Set the HSV range for one color from a sample patch (mean HSV).
 
-        Hue padding is wide because tile borders have gradients and the
-        center icon shifts the local hue; SV floor is low because the
-        colored ring is partly desaturated where it meets the icon.
+        Hue is padded a bit because tile borders have gradients, but the
+        saturation/value floor stays high so muddy background wood (which
+        has low saturation) doesn't fall into the range.
         """
         hsv = cv2.cvtColor(bgr_patch, cv2.COLOR_BGR2HSV).reshape(-1, 3)
         h, s, v = hsv.mean(axis=0)
-        lo = (max(0, int(h) - h_pad), max(40, int(s) - sv_pad),
-              max(40, int(v) - sv_pad))
+        lo = (max(0, int(h) - h_pad), max(90, int(s) - sv_pad),
+              max(70, int(v) - sv_pad))
         hi = (min(180, int(h) + h_pad), 255, 255)
         if color_id == RED and (h < h_pad or h > 180 - h_pad):
             # Wrap red around hue circle.
