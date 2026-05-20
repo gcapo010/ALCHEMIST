@@ -100,30 +100,29 @@ def run_calibration(cols: int = 8, rows: int = 10,
         "      showing the NEXT pair on the parchment).")
     cal.drop_y = min(cal.board_tl[1], cal.board_br[1]) - 10
 
-    # Color tuning: click on a known-color tile to sample.
-    print("\nColor tuning: hover a RED tile and press Ctrl+Alt+Space."
-          " Then BLUE, then GREEN.")
+    # Color auto-detection: grab the board image and find the 3 dominant
+    # saturated hues. Much more robust than asking the user to click each
+    # tile precisely on its colored ring.
+    print("\nAuto-detecting tile colors from the visible board...")
+    print("  Make sure the playable board has a good mix of red, blue,")
+    print("  and green tiles visible right now, then press Ctrl+Alt+Space.")
+    import keyboard as _kb
+    _kb.wait("ctrl+alt+space")
+    time.sleep(0.25)
     classifier = ColorClassifier()
     try:
         from .capture import ScreenCapture, Region
+        from .color import auto_detect_ranges_from_frame, COLOR_NAMES
         sc = ScreenCapture()
-        for color_id, name in [(RED, "RED"), (BLUE, "BLUE"), (GREEN, "GREEN")]:
-            xy = _wait_for_key_and_grab_mouse(
-                f"  hover the CENTER of a {name} tile.")
-            r = 14
-            region = Region(xy[0] - r, xy[1] - r, 2 * r + 1, 2 * r + 1)
-            patch = sc.grab(region)
-            before = classifier.ranges.get(color_id)
-            classifier.tune_from_sample(color_id, patch)
-            after = classifier.ranges.get(color_id)
-            if after is before:
-                print(f"  {name}: no in-zone pixels found at click -- "
-                      f"keeping defaults. Try clicking on the colored "
-                      f"RING of the tile, not the center icon.")
-            else:
-                print(f"  {name} tuned -> {classifier.ranges[color_id]}")
+        region = Region.from_corners(cal.board_tl, cal.board_br)
+        frame = sc.grab(region)
+        ranges = auto_detect_ranges_from_frame(frame)
+        classifier.ranges = ranges
+        for cid, rngs in sorted(ranges.items()):
+            for r in rngs:
+                print(f"  {COLOR_NAMES[cid]}: lo={tuple(r.lo)} hi={tuple(r.hi)}")
     except Exception as e:
-        print(f"  (color tuning skipped: {e}; using defaults)")
+        print(f"  (auto color detection failed: {e}; using defaults)")
     cal.color_ranges = classifier.to_dict()
     cal.save(path)
     print(f"\nSaved calibration to {path}")

@@ -162,3 +162,80 @@ class ColorClassifier:
         for k, v in data.items():
             ranges[int(k)] = [HSVRange(tuple(r["lo"]), tuple(r["hi"])) for r in v]
         return cls(ranges=ranges, min_fill=min_fill)
+
+
+def auto_detect_ranges_from_frame(frame_bgr: np.ndarray,
+                                  h_pad: int = 10,
+                                  sv_pad: int = 60) -> Dict[int, List[HSVRange]]:
+    """Find the 3 dominant saturated hues in a board frame and map them to
+    RED / BLUE / GREEN based on where each cluster lands on the hue wheel.
+
+    This bypasses the per-tile click calibration entirely -- we just look at
+    every saturated pixel in the whole board image and let the actual game
+    colors define the ranges. Far more robust than trying to click on a
+    ring without picking up the icon.
+    """
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV).reshape(-1, 3)
+    sat = hsv[:, 1]
+    val = hsv[:, 2]
+    # Only keep richly colored, not-too-dark pixels.
+    keep = (sat >= 140) & (val >= 90)
+    pix = hsv[keep]
+    if len(pix) < 50:
+        return DEFAULT_COLOR_RANGES
+
+    # Histogram of hues. Red wraps around -- shift hues > 90 down by 180 so
+    # red pixels cluster around 0 instead of straddling 0 and 180.
+    hues = pix[:, 0].astype(np.int32)
+    hues_wrapped = np.where(hues > 90, hues - 180, hues)
+    hist, edges = np.histogram(hues_wrapped, bins=range(-90, 91))
+    # Smooth the histogram so we find broad peaks, not single-bin spikes.
+    kernel = np.ones(5) / 5.0
+    smooth = np.convolve(hist, kernel, mode="same")
+
+    # Find the 3 largest local maxima, suppressing peaks within 10 hue units
+    # of an already-picked one.
+    peaks: List[int] = []
+    smooth_work = smooth.copy()
+    for _ in range(3):
+        if smooth_work.max() <= 0:
+            break
+        idx = int(np.argmax(smooth_work))
+        peak_hue = int(edges[idx])
+        peaks.append(peak_hue)
+        for j in range(max(0, idx - 10), min(len(smooth_work), idx + 11)):
+            smooth_work[j] = 0
+
+    if len(peaks) < 3:
+        return DEFAULT_COLOR_RANGES
+
+    # Map each cluster's hue back into 0-180 space, then assign to a color
+    # by its proximity to known anchors.
+    anchors = {RED: 0, GREEN: 60, BLUE: 110}
+    assignments: Dict[int, int] = {}   # color_id -> chosen hue
+    unused = list(peaks)
+    for color_id, anchor in anchors.items():
+        best = min(unused, key=lambda h: min(abs(h - anchor),
+                                             abs(h + 180 - anchor),
+                                             abs(h - 180 - anchor)))
+        assignments[color_id] = best
+        unused.remove(best)
+
+    ranges: Dict[int, List[HSVRange]] = {}
+    for color_id, h in assignments.items():
+        h_mod = h % 180
+        if color_id == RED and (h_mod < h_pad or h_mod > 180 - h_pad):
+            ranges[RED] = [
+                HSVRange((0, max(90, 200 - sv_pad), max(70, 150 - sv_pad)),
+                         (h_pad, 255, 255)),
+                HSVRange((180 - h_pad, max(90, 200 - sv_pad),
+                          max(70, 150 - sv_pad)),
+                         (180, 255, 255)),
+            ]
+        else:
+            ranges[color_id] = [
+                HSVRange((max(0, h_mod - h_pad),
+                          max(90, 200 - sv_pad), max(70, 150 - sv_pad)),
+                         (min(180, h_mod + h_pad), 255, 255))
+            ]
+    return ranges
