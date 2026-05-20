@@ -34,11 +34,11 @@ class HSVRange:
 # Sensible default HSV ranges. Calibration can override these in calibration.json.
 DEFAULT_COLOR_RANGES: Dict[int, List[HSVRange]] = {
     RED: [
-        HSVRange((0, 110, 80), (10, 255, 255)),
-        HSVRange((170, 110, 80), (180, 255, 255)),
+        HSVRange((0, 80, 60), (12, 255, 255)),
+        HSVRange((165, 80, 60), (180, 255, 255)),
     ],
-    BLUE: [HSVRange((95, 110, 80), (130, 255, 255))],
-    GREEN: [HSVRange((40, 80, 60), (85, 255, 255))],
+    BLUE: [HSVRange((88, 80, 60), (130, 255, 255))],
+    GREEN: [HSVRange((35, 70, 50), (85, 255, 255))],
 }
 
 
@@ -46,7 +46,7 @@ class ColorClassifier:
     """Classifies a small image patch as RED / BLUE / GREEN / EMPTY."""
 
     def __init__(self, ranges: Optional[Dict[int, List[HSVRange]]] = None,
-                 min_fill: float = 0.18) -> None:
+                 min_fill: float = 0.10) -> None:
         self.ranges: Dict[int, List[HSVRange]] = ranges or {
             k: [HSVRange(r.lo, r.hi) for r in v]
             for k, v in DEFAULT_COLOR_RANGES.items()
@@ -93,8 +93,13 @@ class ColorClassifier:
     # --- Auto-tuning helpers ---------------------------------------------
 
     def tune_from_sample(self, color_id: int, bgr_patch: np.ndarray,
-                         h_pad: int = 8, sv_pad: int = 50) -> None:
-        """Set the HSV range for one color from a sample patch (mean HSV)."""
+                         h_pad: int = 18, sv_pad: int = 80) -> None:
+        """Set the HSV range for one color from a sample patch (mean HSV).
+
+        Hue padding is wide because tile borders have gradients and the
+        center icon shifts the local hue; SV floor is low because the
+        colored ring is partly desaturated where it meets the icon.
+        """
         hsv = cv2.cvtColor(bgr_patch, cv2.COLOR_BGR2HSV).reshape(-1, 3)
         h, s, v = hsv.mean(axis=0)
         lo = (max(0, int(h) - h_pad), max(40, int(s) - sv_pad),
