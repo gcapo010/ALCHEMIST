@@ -89,9 +89,14 @@ def run_calibration(cols: int = 7, rows: int = 8,
     cal.board_br = _wait_for_key_and_grab_mouse(
         "[2/4] Bottom-right corner of the playable board.")
     cal.current_pair_xy = _wait_for_key_and_grab_mouse(
-        "[3/4] Center of the CURRENT piece spawn (top-right).")
+        "[3/4] PARK position for the active pair. The active pair follows\n"
+        "      the cursor along the top row, so pick a spot ABOVE the\n"
+        "      board where you want it to sit while the bot reads its\n"
+        "      colors (e.g. above column 0 of row 0). Hover that exact\n"
+        "      point now.")
     cal.preview_pair_xy = _wait_for_key_and_grab_mouse(
-        "[4/4] Center of the PREVIEW piece area.")
+        "[4/4] Center of the PREVIEW piece area (the fixed display\n"
+        "      showing the NEXT pair on the parchment).")
     cal.drop_y = min(cal.board_tl[1], cal.board_br[1]) - 10
 
     # Color tuning: click on a known-color tile to sample.

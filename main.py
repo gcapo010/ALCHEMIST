@@ -136,6 +136,12 @@ def run(debug: bool = False, probe: bool = False) -> int:
                 cal = run_calibration(cols=cal.cols, rows=cal.rows)
                 sc, classifier, region, grid, reader = _setup(cal)
 
+            # The current pair follows the cursor along the top row, so we
+            # have to park the cursor at a known location BEFORE sampling its
+            # colors. cal.current_pair_xy is that parking spot.
+            mouse.move_to(cal.current_pair_xy)
+            time.sleep(0.02)  # let the game redraw the pair at the new x
+
             frame = sc.grab(region)
             board_arr = reader.read(frame)
             board = Board(board_arr.copy())
