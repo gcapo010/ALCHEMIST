@@ -78,7 +78,11 @@ def _handle_endgame(sc: ScreenCapture, tm: TemplateMatcher,
 def run(debug: bool = False) -> int:
     cal = load_calibration()
     if cal is None:
-        print(f"No {DEFAULT_CALIBRATION_PATH} found. Run with --calibrate first.")
+        print("=" * 60)
+        print(f"  No {DEFAULT_CALIBRATION_PATH} found.")
+        print("  Run calibration first:")
+        print("      python main.py --calibrate")
+        print("=" * 60)
         return 2
 
     sc, classifier, region, grid, reader = _setup(cal)
@@ -185,8 +189,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="alchemist")
     parser.add_argument("--calibrate", action="store_true")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--cols", type=int, default=8)
-    parser.add_argument("--rows", type=int, default=12)
+    parser.add_argument("--cols", type=int, default=7)
+    parser.add_argument("--rows", type=int, default=8)
     args = parser.parse_args(argv)
 
     if args.calibrate:
@@ -195,5 +199,33 @@ def main(argv=None) -> int:
     return run(debug=args.debug)
 
 
+def _pause_before_exit(message: str = "") -> None:
+    """Keep the console window open when launched by double-clicking."""
+    if message:
+        print(message)
+    try:
+        input("\nPress Enter to close this window...")
+    except EOFError:
+        pass
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    import traceback
+    code = 1
+    try:
+        code = main()
+    except SystemExit:
+        raise
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.")
+        code = 0
+    except Exception:
+        traceback.print_exc()
+        _pause_before_exit("\nThe bot crashed. See the traceback above.")
+        sys.exit(1)
+    # Pause on clean exit too, so a double-clicked window doesn't vanish.
+    if code != 0:
+        _pause_before_exit(f"Exited with code {code}.")
+    else:
+        _pause_before_exit()
+    sys.exit(code)
