@@ -103,18 +103,36 @@ class ColorClassifier:
 
         The patch is expected to cover most of a hex tile. Tile icons and
         background wood are filtered out by only keeping highly saturated,
-        not-too-dark pixels; the hue is then taken as the median over the
-        remaining ring pixels so a brown icon at the center can't drag the
-        mean toward orange.
+        not-too-dark pixels whose hue falls inside the broad zone for the
+        target color (so a yellow icon highlight can't be mistaken for the
+        green ring). Hue is then taken as the median over the remaining
+        ring pixels.
         """
+        # Coarse expected hue zone per color in OpenCV HSV (0-179).
+        # Red wraps around 0/180; encode that as two intervals.
+        expected_zones: Dict[int, List[Tuple[int, int]]] = {
+            RED: [(0, 12), (160, 180)],
+            BLUE: [(85, 130)],
+            GREEN: [(35, 90)],
+        }
         hsv = cv2.cvtColor(bgr_patch, cv2.COLOR_BGR2HSV).reshape(-1, 3)
+        hue = hsv[:, 0]
         sat = hsv[:, 1]
         val = hsv[:, 2]
-        keep = (sat >= 140) & (val >= 80)
+
+        zone_mask = np.zeros(len(hsv), dtype=bool)
+        for lo_h, hi_h in expected_zones.get(color_id, [(0, 180)]):
+            zone_mask |= (hue >= lo_h) & (hue <= hi_h)
+
+        keep = zone_mask & (sat >= 140) & (val >= 80)
         if not np.any(keep):
+            keep = zone_mask & (sat >= 100) & (val >= 60)
+        if not np.any(keep):
+            # Fall back to any saturated pixel, ignoring the zone.
             keep = (sat >= 100) & (val >= 60)
         if not np.any(keep):
             keep = np.ones(len(hsv), dtype=bool)
+
         ring = hsv[keep]
         h = float(np.median(ring[:, 0]))
         s = float(np.median(ring[:, 1]))
