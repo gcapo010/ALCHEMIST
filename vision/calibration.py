@@ -138,8 +138,8 @@ def run_calibration(cols: int = 8, rows: int = 10,
                 f"  hover the CENTER of a {name.upper()} tile.")
             region = Region(xy[0] - r, xy[1] - r, 2 * r + 1, 2 * r + 1)
             patch = sc.grab(region)
-            path = save_template(name, patch)
-            print(f"  {name}: saved template -> {path}")
+            tmpl_path = save_template(name, patch)
+            print(f"  {name}: saved template -> {tmpl_path}")
     except Exception as e:
         print(f"  (template capture skipped: {e})")
 
